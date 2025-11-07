@@ -144,6 +144,12 @@ ENV/
 env.bak/
 venv.bak/
 
+# Downloaded music files
+downloads/
+*.mp3
+*.m4a
+*.webm
+
 # Spyder project settings
 .spyderproject
 .spyproject
