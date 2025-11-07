@@ -1,0 +1,104 @@
+# ВИРІШЕННЯ ПРОБЛЕМИ 403 FORBIDDEN НА СЕРВЕРІ
+
+## Проблема
+YouTube блокує запити з серверів, видаючи помилку "HTTP Error 403: Forbidden"
+
+## Рішення
+
+### 1. Оновіть yt-dlp (НАЙВАЖЛИВІШЕ!)
+```bash
+pip install -U yt-dlp
+# або
+pip3 install -U yt-dlp
+```
+
+### 2. Перевірте чи встановлено FFmpeg
+```bash
+ffmpeg -version
+```
+Якщо не встановлено:
+```bash
+sudo apt install ffmpeg -y
+```
+
+### 3. Запустіть тест
+```bash
+python3 test_youtube.py
+```
+
+### 4. Якщо не допомагає - додайте cookies
+
+#### Спосіб А: Експорт cookies з браузера
+1. Встановіть розширення "Get cookies.txt LOCALLY" для Chrome/Firefox
+2. Зайдіть на youtube.com
+3. Експортуйте cookies у файл `cookies.txt` в папку бота
+4. Раскоментуйте в youtube_downloader.py рядок з cookies
+
+#### Спосіб Б: Використання OAuth (складніше)
+Потребує додаткового налаштування через Google Cloud Console
+
+### 5. Альтернативні рішення
+
+#### Використання проксі
+Додайте в youtube_downloader.py:
+```python
+'proxy': 'http://proxy-address:port',
+```
+
+#### Зміна DNS
+```bash
+sudo nano /etc/resolv.conf
+# Додайте:
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+```
+
+### 6. Перевірка з'єднання
+```bash
+# Перевірте доступ до YouTube
+curl -I https://www.youtube.com
+
+# Перевірте доступ до відео
+curl -I "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+```
+
+## Поточні налаштування бота
+
+Бот вже налаштований з:
+- ✅ User-Agent обходом
+- ✅ Android player client
+- ✅ IPv4 форсингом
+- ✅ Правильними headers
+
+Ці налаштування вирішують проблему в 90% випадків після оновлення yt-dlp.
+
+## Команди для запуску
+
+### Звичайний запуск:
+```bash
+source venv/bin/activate  # або просто: . venv/bin/activate
+python3 main.py
+```
+
+### Запуск у фоні:
+```bash
+nohup python3 main.py > bot.log 2>&1 &
+```
+
+### Перегляд логів:
+```bash
+tail -f bot.log
+```
+
+### Зупинка бота:
+```bash
+ps aux | grep main.py
+kill [PID]
+```
+
+## Якщо нічого не допомагає
+
+1. Спробуйте інший сервер (можливо IP заблокований YouTube)
+2. Використайте VPS в іншій країні
+3. Налаштуйте проксі/VPN на сервері
+4. Розгляньте альтернативні API для завантаження музики

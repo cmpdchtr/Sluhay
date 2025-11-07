@@ -9,6 +9,10 @@ class YouTubeDownloader:
     def __init__(self):
         """Ініціалізація завантажувача"""
         self.download_dir = config.DOWNLOADS_DIR
+        # Перевіряємо чи є файл з cookies (для обходу блокувань YouTube)
+        self.cookies_file = os.path.join(os.path.dirname(__file__), 'cookies.txt')
+        if not os.path.exists(self.cookies_file):
+            self.cookies_file = None
     
     def download_audio(self, search_query: str, track_name: str) -> str | None:
         """
@@ -34,7 +38,7 @@ class YouTubeDownloader:
             
             output_path = os.path.join(self.download_dir, f"{safe_filename}.mp3")
             
-            # Налаштування для yt-dlp
+            # Налаштування для yt-dlp з обходом блокувань
             ydl_opts = {
                 'format': 'bestaudio/best',
                 'postprocessors': [{
@@ -45,23 +49,36 @@ class YouTubeDownloader:
                 'outtmpl': os.path.join(self.download_dir, f"{safe_filename}.%(ext)s"),
                 'quiet': True,
                 'no_warnings': True,
-                'default_search': 'ytsearch1',  # Пошук на YouTube, перший результат
+                'default_search': 'ytsearch1',
                 'noplaylist': True,
                 'extract_flat': False,
                 'ignoreerrors': False,
                 'no_check_certificate': True,
-                'prefer_insecure': True,
                 'geo_bypass': True,
                 'age_limit': None,
-                # Додаткові опції для обходу обмежень
+                # Важливі опції для обходу 403 помилки
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-us,en;q=0.5',
+                    'Accept-Encoding': 'gzip,deflate',
+                    'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
+                },
+                # Додаткові опції для обходу обмежень YouTube
                 'extractor_args': {
                     'youtube': {
-                        'skip': ['hls', 'dash', 'translated_subs'],
-                        'player_skip': ['configs', 'webpage'],
                         'player_client': ['android', 'web'],
+                        'player_skip': ['webpage', 'configs'],
+                        'skip': ['hls', 'dash'],
                     }
                 },
+                # Використовуємо IPv4 (деякі сервери мають проблеми з IPv6)
+                'source_address': '0.0.0.0',
             }
+            
+            # Якщо є файл cookies - використовуємо його
+            if self.cookies_file:
+                ydl_opts['cookiefile'] = self.cookies_file
             
             # Завантажуємо аудіо
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:

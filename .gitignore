@@ -150,6 +150,13 @@ downloads/
 *.m4a
 *.webm
 
+# YouTube cookies (якщо використовуються)
+cookies.txt
+
+# Bot logs
+bot.log
+*.log
+
 # Spyder project settings
 .spyderproject
 .spyproject
