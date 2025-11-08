@@ -42,11 +42,16 @@ class YouTubeDownloader:
             
             output_path = os.path.join(self.download_dir, f"{safe_filename}.mp3")
             
-            # Оптимізовані налаштування для ШВИДКОСТІ та НАДІЙНОСТІ
+            # Баланс між ШВИДКІСТЮ та НАДІЙНІСТЮ
             ydl_opts = {
-                # Простий формат з fallback - беремо що доступно
-                # worstaudio/worst додано для екстремальних випадків коли нічого іншого немає
-                'format': 'bestaudio/best/worstaudio/worst',
+                # Спочатку намагаємось отримати невеликі аудіо файли, потім більші
+                'format': (
+                    'bestaudio[filesize<10M]/'  # Спочатку файли до 10MB
+                    'bestaudio[filesize<20M]/'  # Потім до 20MB
+                    'bestaudio/'                 # Потім будь-яке аудіо
+                    'best[filesize<15M]/'       # Відео+аудіо до 15MB
+                    'best'                       # В крайньому випадку - будь-що
+                ),
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
@@ -59,22 +64,21 @@ class YouTubeDownloader:
                 'noplaylist': True,
                 'no_check_certificate': True,
                 'geo_bypass': True,
-                # Зменшено кількість спроб для швидшої роботи
                 'retries': 3,
                 'fragment_retries': 3,
                 'skip_unavailable_fragments': True,
-                'ignore_no_formats_error': True,  # Ігноруємо помилки форматів
+                'ignore_no_formats_error': True,
                 # Оптимізації швидкості
-                'concurrent_fragment_downloads': 4,
-                'buffer_size': 1024 * 64,
-                'http_chunk_size': 1024 * 1024,
+                'concurrent_fragment_downloads': 5,  # Збільшено для швидшого завантаження
+                'buffer_size': 1024 * 128,  # Збільшено буфер
+                'http_chunk_size': 1024 * 1024 * 2,  # 2MB chunks
                 'throttled_rate': None,
                 'http_headers': {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 },
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android', 'web'],  # Додано web як fallback
+                        'player_client': ['android', 'web'],
                         'player_skip': ['webpage', 'configs'],
                     }
                 },
