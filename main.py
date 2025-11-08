@@ -4,7 +4,7 @@ import aiohttp
 import os
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
-from aiogram.types import Message, FSInputFile, BufferedInputFile
+from aiogram.types import Message, FSInputFile, BufferedInputFile, InputMediaAudio
 from aiogram.enums import ParseMode
 
 import config
@@ -292,16 +292,19 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
             f"📋 <b>{playlist_info['name']}</b>\n"
             f"👤 {playlist_info['owner']}\n"
             f"🎵 Треків: {total_tracks}\n\n"
-            f"⏳ Завантажую..."
+            f"⏳ Починаю завантаження..."
         )
         await status_msg.edit_text(info_text, parse_mode=ParseMode.HTML)
         
-        # Завантажуємо кожен трек
-        successful = 0
+        # Завантажуємо всі треки
+        downloaded_files = []
+        failed_tracks = []
+        
         for index, track_info in enumerate(tracks, 1):
             try:
                 await status_msg.edit_text(
-                    f"⏳ Завантажую трек {index}/{total_tracks}...\n\n"
+                    f"📋 <b>{playlist_info['name']}</b>\n\n"
+                    f"⏳ Завантаження: {index}/{total_tracks}\n"
                     f"🎵 {track_info['name']}\n"
                     f"👤 {track_info['artists']}",
                     parse_mode=ParseMode.HTML
@@ -313,37 +316,68 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
                     f"{track_info['artists']} - {track_info['name']}"
                 )
                 
-                if not audio_path:
+                if audio_path:
+                    downloaded_files.append({
+                        'path': audio_path,
+                        'title': track_info['name'],
+                        'performer': track_info['artists']
+                    })
+                else:
+                    failed_tracks.append(track_info['name'])
                     logger.warning(f"Пропущено трек: {track_info['name']}")
-                    continue
-                
-                # Відправляємо аудіо з мінімальним описом
-                caption = f"🎵 <b>{track_info['name']}</b>\n👤 {track_info['artists']}"
-                
-                audio_file = FSInputFile(audio_path)
-                await message.answer_audio(
-                    audio=audio_file,
-                    title=track_info['name'],
-                    performer=track_info['artists'],
-                    caption=caption,
-                    parse_mode=ParseMode.HTML
-                )
-                
-                # Видаляємо файл після відправки
-                youtube.cleanup_file(audio_path)
-                successful += 1
                 
             except Exception as e:
+                failed_tracks.append(track_info['name'])
                 logger.error(f"Помилка при завантаженні треку {track_info['name']}: {e}")
-                continue
         
-        # Фінальне повідомлення
-        await status_msg.edit_text(
-            f"✅ Готово!\n\n"
-            f"📋 <b>{playlist_info['name']}</b>\n"
-            f"✅ Завантажено: {successful}/{total_tracks}",
-            parse_mode=ParseMode.HTML
-        )
+        # Відправляємо завантажені файли групами по 10
+        if downloaded_files:
+            await status_msg.edit_text(
+                f"📋 <b>{playlist_info['name']}</b>\n\n"
+                f"✅ Завантажено: {len(downloaded_files)}/{total_tracks}\n"
+                f"📤 Відправляю файли...",
+                parse_mode=ParseMode.HTML
+            )
+            
+            # Telegram дозволяє відправляти до 10 медіа-файлів за раз
+            for i in range(0, len(downloaded_files), 10):
+                batch = downloaded_files[i:i+10]
+                media_group = []
+                
+                for file_info in batch:
+                    audio_file = FSInputFile(file_info['path'])
+                    caption = f"🎵 {file_info['title']}\n👤 {file_info['performer']}"
+                    
+                    media_group.append(InputMediaAudio(
+                        media=audio_file,
+                        title=file_info['title'],
+                        performer=file_info['performer'],
+                        caption=caption if len(media_group) == 0 else None  # Тільки перший файл з описом
+                    ))
+                
+                # Відправляємо групу
+                await message.answer_media_group(media=media_group)
+                
+                # Видаляємо файли після відправки
+                for file_info in batch:
+                    youtube.cleanup_file(file_info['path'])
+            
+            # Фінальне повідомлення
+            result_text = (
+                f"✅ <b>Готово!</b>\n\n"
+                f"📋 <b>{playlist_info['name']}</b>\n"
+                f"✅ Відправлено: {len(downloaded_files)}/{total_tracks}"
+            )
+            
+            if failed_tracks:
+                result_text += f"\n❌ Не вдалося завантажити: {len(failed_tracks)}"
+            
+            await status_msg.edit_text(result_text, parse_mode=ParseMode.HTML)
+        else:
+            await status_msg.edit_text(
+                "❌ Не вдалося завантажити жодного треку з плейлиста.",
+                parse_mode=ParseMode.HTML
+            )
         
     except Exception as e:
         logger.error(f"Помилка при обробці плейлиста: {e}")
@@ -395,16 +429,19 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
             f"👤 {album_info['artist']}\n"
             f"📅 {album_info['release_date']}\n"
             f"🎵 Треків: {total_tracks}\n\n"
-            f"⏳ Завантажую..."
+            f"⏳ Починаю завантаження..."
         )
         await status_msg.edit_text(info_text, parse_mode=ParseMode.HTML)
         
-        # Завантажуємо кожен трек
-        successful = 0
+        # Завантажуємо всі треки
+        downloaded_files = []
+        failed_tracks = []
+        
         for index, track_info in enumerate(tracks, 1):
             try:
                 await status_msg.edit_text(
-                    f"⏳ Завантажую трек {index}/{total_tracks}...\n\n"
+                    f"💿 <b>{album_info['name']}</b>\n\n"
+                    f"⏳ Завантаження: {index}/{total_tracks}\n"
                     f"🎵 {track_info['name']}\n"
                     f"👤 {track_info['artists']}",
                     parse_mode=ParseMode.HTML
@@ -416,38 +453,69 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
                     f"{track_info['artists']} - {track_info['name']}"
                 )
                 
-                if not audio_path:
+                if audio_path:
+                    downloaded_files.append({
+                        'path': audio_path,
+                        'title': track_info['name'],
+                        'performer': track_info['artists']
+                    })
+                else:
+                    failed_tracks.append(track_info['name'])
                     logger.warning(f"Пропущено трек: {track_info['name']}")
-                    continue
-                
-                # Відправляємо аудіо з мінімальним описом
-                caption = f"🎵 <b>{track_info['name']}</b>\n👤 {track_info['artists']}"
-                
-                audio_file = FSInputFile(audio_path)
-                await message.answer_audio(
-                    audio=audio_file,
-                    title=track_info['name'],
-                    performer=track_info['artists'],
-                    caption=caption,
-                    parse_mode=ParseMode.HTML
-                )
-                
-                # Видаляємо файл після відправки
-                youtube.cleanup_file(audio_path)
-                successful += 1
                 
             except Exception as e:
+                failed_tracks.append(track_info['name'])
                 logger.error(f"Помилка при завантаженні треку {track_info['name']}: {e}")
-                continue
         
-        # Фінальне повідомлення
-        await status_msg.edit_text(
-            f"✅ Готово!\n\n"
-            f"💿 <b>{album_info['name']}</b>\n"
-            f"👤 {album_info['artist']}\n"
-            f"✅ Завантажено: {successful}/{total_tracks}",
-            parse_mode=ParseMode.HTML
-        )
+        # Відправляємо завантажені файли групами по 10
+        if downloaded_files:
+            await status_msg.edit_text(
+                f"💿 <b>{album_info['name']}</b>\n\n"
+                f"✅ Завантажено: {len(downloaded_files)}/{total_tracks}\n"
+                f"📤 Відправляю файли...",
+                parse_mode=ParseMode.HTML
+            )
+            
+            # Telegram дозволяє відправляти до 10 медіа-файлів за раз
+            for i in range(0, len(downloaded_files), 10):
+                batch = downloaded_files[i:i+10]
+                media_group = []
+                
+                for file_info in batch:
+                    audio_file = FSInputFile(file_info['path'])
+                    caption = f"🎵 {file_info['title']}\n👤 {file_info['performer']}"
+                    
+                    media_group.append(InputMediaAudio(
+                        media=audio_file,
+                        title=file_info['title'],
+                        performer=file_info['performer'],
+                        caption=caption if len(media_group) == 0 else None  # Тільки перший файл з описом
+                    ))
+                
+                # Відправляємо групу
+                await message.answer_media_group(media=media_group)
+                
+                # Видаляємо файли після відправки
+                for file_info in batch:
+                    youtube.cleanup_file(file_info['path'])
+            
+            # Фінальне повідомлення
+            result_text = (
+                f"✅ <b>Готово!</b>\n\n"
+                f"💿 <b>{album_info['name']}</b>\n"
+                f"👤 {album_info['artist']}\n"
+                f"✅ Відправлено: {len(downloaded_files)}/{total_tracks}"
+            )
+            
+            if failed_tracks:
+                result_text += f"\n❌ Не вдалося завантажити: {len(failed_tracks)}"
+            
+            await status_msg.edit_text(result_text, parse_mode=ParseMode.HTML)
+        else:
+            await status_msg.edit_text(
+                "❌ Не вдалося завантажити жодного треку з альбому.",
+                parse_mode=ParseMode.HTML
+            )
         
     except Exception as e:
         logger.error(f"Помилка при обробці альбому: {e}")
