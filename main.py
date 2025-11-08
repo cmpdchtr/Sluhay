@@ -111,7 +111,7 @@ async def callback_search_track(callback: CallbackQuery, state: FSMContext):
     cancel_keyboard = ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="❌ Скасувати")]],
         resize_keyboard=True,
-        input_field_placeholder="Виконавець - Назва треку"
+        input_field_placeholder="Виконавець - Трек"
     )
     
     await callback.message.edit_text(
@@ -139,7 +139,7 @@ async def callback_search_album(callback: CallbackQuery, state: FSMContext):
     cancel_keyboard = ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="❌ Скасувати")]],
         resize_keyboard=True,
-        input_field_placeholder="Виконавець - Назва альбому"
+        input_field_placeholder="Виконавець - Альбом"
     )
     
     await callback.message.edit_text(
@@ -167,7 +167,7 @@ async def callback_search_playlist(callback: CallbackQuery, state: FSMContext):
     cancel_keyboard = ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="❌ Скасувати")]],
         resize_keyboard=True,
-        input_field_placeholder="Назва плейліста"
+        input_field_placeholder="Плейліст"
     )
     
     await callback.message.edit_text(
