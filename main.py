@@ -114,15 +114,9 @@ async def callback_search_track(callback: CallbackQuery, state: FSMContext):
         input_field_placeholder="Виконавець - Трек"
     )
     
-    await callback.message.edit_text(
-        "🎵 <b>Пошук треку</b>\n\n"
-        "Введи назву треку або посилання Spotify:",
-        parse_mode=ParseMode.HTML
-    )
-    
-    # Відправляємо окреме повідомлення з Reply клавіатурою
     await callback.message.answer(
-        "📝 <i>Підказка: введи текст у форматі</i> <code>Виконавець - Назва</code>",
+        "🎵 <b>Пошук треку</b>\n\n"
+        "📝 <i>Введи назву треку або посилання Spotify</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=cancel_keyboard
     )
@@ -142,15 +136,9 @@ async def callback_search_album(callback: CallbackQuery, state: FSMContext):
         input_field_placeholder="Виконавець - Альбом"
     )
     
-    await callback.message.edit_text(
-        "💿 <b>Пошук альбому</b>\n\n"
-        "Введи назву альбому або посилання Spotify:",
-        parse_mode=ParseMode.HTML
-    )
-    
-    # Відправляємо окреме повідомлення з Reply клавіатурою
     await callback.message.answer(
-        "📝 <i>Підказка: введи текст у форматі</i> <code>Виконавець - Назва альбому</code>",
+        "💿 <b>Пошук альбому</b>\n\n"
+        "📝 <i>Введи назву альбому або посилання Spotify</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=cancel_keyboard
     )
@@ -170,15 +158,9 @@ async def callback_search_playlist(callback: CallbackQuery, state: FSMContext):
         input_field_placeholder="Плейліст"
     )
     
-    await callback.message.edit_text(
-        "📋 <b>Пошук плейліста</b>\n\n"
-        "Введи назву плейліста або посилання Spotify:",
-        parse_mode=ParseMode.HTML
-    )
-    
-    # Відправляємо окреме повідомлення з Reply клавіатурою
     await callback.message.answer(
-        "📝 <i>Підказка: введи назву плейліста</i>",
+        "📋 <b>Пошук плейліста</b>\n\n"
+        "📝 <i>Введи назву плейліста або посилання Spotify</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=cancel_keyboard
     )
