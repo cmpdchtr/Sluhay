@@ -118,6 +118,98 @@ class YouTubeDownloader:
             traceback.print_exc()
             return None
     
+    def download_from_soundcloud(self, search_query: str, track_name: str, user_id: int = None) -> str | None:
+        """
+        Завантажує аудіо з SoundCloud за пошуковим запитом
+        
+        Args:
+            search_query: Пошуковий запит (виконавець - назва)
+            track_name: Назва треку для імені файлу
+            user_id: ID користувача для унікальності файлу
+            
+        Returns:
+            Шлях до завантаженого файлу або None
+        """
+        try:
+            # Створюємо безпечне ім'я файлу
+            safe_filename = "".join(
+                c for c in track_name if c.isalnum() or c in (' ', '-', '_')
+            ).rstrip()
+            
+            if not safe_filename:
+                import time
+                safe_filename = f"track_{int(time.time())}"
+            
+            # Додаємо user_id та timestamp для унікальності
+            import time
+            unique_id = f"{user_id}_{int(time.time() * 1000)}" if user_id else f"{int(time.time() * 1000)}"
+            safe_filename = f"{safe_filename}_{unique_id}"
+            
+            output_path = os.path.join(self.download_dir, f"{safe_filename}.mp3")
+            
+            # Налаштування для SoundCloud - швидкі та прості
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '96',
+                }],
+                'outtmpl': os.path.join(self.download_dir, f"{safe_filename}.%(ext)s"),
+                'quiet': True,
+                'no_warnings': True,
+                'default_search': 'scsearch1',  # SoundCloud search!
+                'noplaylist': True,
+                'retries': 2,  # Менше спроб для швидкості
+                'fragment_retries': 2,
+                'http_chunk_size': 10485760,
+                'concurrent_fragment_downloads': 10,
+            }
+            
+            # Завантажуємо з SoundCloud
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([search_query])
+            
+            # Перевіряємо файл
+            if os.path.exists(output_path):
+                print(f"✓ Завантажено з SoundCloud: {track_name}")
+                return output_path
+            else:
+                print(f"✗ Файл не знайдено на SoundCloud: {track_name}")
+                return None
+                
+        except Exception as e:
+            print(f"SoundCloud помилка: {e}")
+            return None
+    
+    def download_audio_smart(self, search_query: str, track_name: str, user_id: int = None) -> tuple[str | None, str]:
+        """
+        Розумне завантаження: спочатку SoundCloud, потім YouTube
+        
+        Args:
+            search_query: Пошуковий запит
+            track_name: Назва треку
+            user_id: ID користувача
+            
+        Returns:
+            Tuple (шлях до файлу, джерело: 'soundcloud' або 'youtube')
+        """
+        # Спочатку пробуємо SoundCloud (швидше)
+        print(f"🔍 Шукаю на SoundCloud: {search_query}")
+        soundcloud_path = self.download_from_soundcloud(search_query, track_name, user_id)
+        
+        if soundcloud_path:
+            return soundcloud_path, 'soundcloud'
+        
+        # Якщо не знайшли на SoundCloud, йдемо на YouTube
+        print(f"🔍 Шукаю на YouTube: {search_query}")
+        youtube_path = self.download_audio(search_query, track_name, user_id)
+        
+        if youtube_path:
+            return youtube_path, 'youtube'
+        
+        return None, 'none'
+    
     def cleanup_file(self, filepath: str) -> None:
         """
         Видаляє файл після відправки

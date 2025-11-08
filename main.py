@@ -69,7 +69,7 @@ async def cmd_help(message: Message):
         "⚠️ <b>Важливо:</b>\n"
         "• Якість аудіо: 96 kbps MP3 (оптимізовано для швидкості)\n"
         "• Максимальний розмір файлу: 50 МБ\n"
-        "• Бот шукає трек на YouTube за даними зі Spotify\n\n"
+        "• Бот шукає трек спочатку на 🟢 SoundCloud (швидко), потім на 🔴 YouTube (надійно)\n\n"
         "🧪 <b>Тестування:</b>\n"
         "Використай /test для швидкої перевірки функціоналу без завантаження файлів.\n\n"
         "❓ Питання чи проблеми? Напиши в тех. підтримку - @cmpdchtr!"
@@ -344,13 +344,13 @@ async def handle_track(message: Message, status_msg: Message, user_input: str, i
             f"🎵 <b>{track_info['name']}</b>\n"
             f"👤 {track_info['artists']}\n"
             f"💿 Альбом: {track_info['album']}\n\n"
-            f"⏳ Завантажую з YouTube..."
+            f"⏳ Шукаю трек на SoundCloud та YouTube..."
         )
         await status_msg.edit_text(info_text, parse_mode=ParseMode.HTML)
         
-        # Завантажуємо аудіо з YouTube
+        # Розумне завантаження: SoundCloud → YouTube
         logger.info(f"Завантаження: {track_info['search_query']}")
-        audio_path = youtube.download_audio(
+        audio_path, source = youtube.download_audio_smart(
             track_info['search_query'],
             f"{track_info['artists']} - {track_info['name']}",
             message.from_user.id
@@ -358,10 +358,10 @@ async def handle_track(message: Message, status_msg: Message, user_input: str, i
         
         if not audio_path:
             await status_msg.edit_text(
-                "❌ Не вдалося завантажити трек з YouTube.\n\n"
+                "❌ Не вдалося завантажити трек.\n\n"
                 "💡 Можливі причини:\n"
-                "• Відео недоступне або обмежене\n"
-                "• YouTube заблокував доступ\n"
+                "• Трек недоступний на SoundCloud і YouTube\n"
+                "• Проблеми з доступом до сервісів\n"
                 "Спробуй:\n"
                 "1. Надіслати інший трек\n"
                 "2. Використати пряме посилання на Spotify",
@@ -370,7 +370,8 @@ async def handle_track(message: Message, status_msg: Message, user_input: str, i
             return
         
         # Відправляємо аудіо файл
-        await status_msg.edit_text("📤 Відправляю аудіо...")
+        source_emoji = "🟢" if source == "soundcloud" else "🔴"
+        await status_msg.edit_text(f"📤 Відправляю аудіо {source_emoji}...")
         
         # Форматуємо тривалість треку
         duration_ms = track_info.get('duration_ms', 0)
@@ -385,6 +386,7 @@ async def handle_track(message: Message, status_msg: Message, user_input: str, i
         file_size_str = f"{file_size_mb:.2f} МБ"
         
         # Формуємо детальний опис треку
+        source_text = "🟢 SoundCloud" if source == "soundcloud" else "🔴 YouTube"
         caption = (
             f"🎵 <b>{track_info['name']}</b>\n"
             f"👤 <b>Виконавець:</b> {track_info['artists']}\n"
@@ -392,7 +394,7 @@ async def handle_track(message: Message, status_msg: Message, user_input: str, i
             f"⏱ <b>Тривалість:</b> {duration_str}\n"
             f"📦 <b>Розмір:</b> {file_size_str}\n"
             f"🎧 <b>Якість:</b> MP3 96 kbps\n"
-            f"📥 <b>Джерело:</b> YouTube\n\n"
+            f"📥 <b>Джерело:</b> {source_text}\n\n"
             f"<i>Завантажено ботом @Sluhayy_bot</i> 🎶"
         )
         
@@ -493,8 +495,8 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
                     parse_mode=ParseMode.HTML
                 )
                 
-                # Завантажуємо аудіо з YouTube
-                audio_path = youtube.download_audio(
+                # Розумне завантаження: SoundCloud → YouTube
+                audio_path, _ = youtube.download_audio_smart(
                     track_info['search_query'],
                     f"{track_info['artists']} - {track_info['name']}",
                     message.from_user.id
@@ -644,8 +646,8 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
                     parse_mode=ParseMode.HTML
                 )
                 
-                # Завантажуємо аудіо з YouTube
-                audio_path = youtube.download_audio(
+                # Розумне завантаження: SoundCloud → YouTube
+                audio_path, _ = youtube.download_audio_smart(
                     track_info['search_query'],
                     f"{track_info['artists']} - {track_info['name']}",
                     message.from_user.id
