@@ -1,5 +1,15 @@
 # Sluhay Bot - Quick Start
 
+## ⚠️ ВАЖЛИВА ІНФОРМАЦІЯ ПРО COOKIES
+
+**НЕ створюйте файл cookies.txt без необхідності!**
+
+Старі/невалідні cookies ВИКЛИКАЮТЬ ПОМИЛКИ:
+- "Requested format is not available"
+- "HTTP Error 403: Forbidden"
+
+**Якщо бот не працює - ВИДАЛІТЬ cookies.txt (якщо він є)**
+
 ## Проблема: "Conflict: terminated by other getUpdates request"
 
 **Рішення:**
@@ -13,15 +23,20 @@ bash stop_bot.sh
 
 ## Проблема: "Requested format is not available"
 
-**Виправлено!** Бот тепер підтримує fallback формати:
-- m4a → webm → будь-який аудіо → найкращий
+**Найчастіша причина:** старий файл cookies.txt
+
+**Рішення:**
+1. Видаліть cookies.txt (якщо є)
+2. Оновіть yt-dlp: `pip install -U yt-dlp`
+3. Перезапустіть бота
 
 ## Проблема: "HTTP Error 403: Forbidden" (на сервері)
 
 **Рішення:**
 1. `pip install -U yt-dlp`
-2. `python3 test_youtube.py` (перевірка)
-3. Якщо не допомагає - додайте cookies.txt
+2. Видаліть cookies.txt (якщо є)
+3. `python3 test_youtube.py` (перевірка)
+4. Тільки якщо НЕ допомагає - додайте СВІЖІ cookies.txt
 
 ## Запуск
 

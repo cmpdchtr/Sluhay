@@ -3,6 +3,13 @@
 ## Проблема
 YouTube блокує запити з серверів, видаючи помилку "HTTP Error 403: Forbidden"
 
+## ⚠️ КРИТИЧНО: НЕ ВИКОРИСТОВУЙТЕ COOKIES!
+
+**Підтримка cookies.txt ВИМКНЕНА в коді бота!**
+
+Причина: cookies викликають помилки з форматами YouTube.
+Бот працює КРАЩЕ без них!
+
 ## Рішення
 
 ### 1. Оновіть yt-dlp (НАЙВАЖЛИВІШЕ!)
@@ -12,7 +19,12 @@ pip install -U yt-dlp
 pip3 install -U yt-dlp
 ```
 
-### 2. Перевірте чи встановлено FFmpeg
+### 2. Видаліть cookies.txt якщо він є
+```bash
+rm cookies.txt
+```
+
+### 3. Перевірте чи встановлено FFmpeg
 ```bash
 ffmpeg -version
 ```
@@ -21,23 +33,12 @@ ffmpeg -version
 sudo apt install ffmpeg -y
 ```
 
-### 3. Запустіть тест
+### 4. Запустіть тест
 ```bash
 python3 test_youtube.py
 ```
 
-### 4. Якщо не допомагає - додайте cookies
-
-#### Спосіб А: Експорт cookies з браузера
-1. Встановіть розширення "Get cookies.txt LOCALLY" для Chrome/Firefox
-2. Зайдіть на youtube.com
-3. Експортуйте cookies у файл `cookies.txt` в папку бота
-4. Раскоментуйте в youtube_downloader.py рядок з cookies
-
-#### Спосіб Б: Використання OAuth (складніше)
-Потребує додаткового налаштування через Google Cloud Console
-
-### 5. Альтернативні рішення
+### 5. Альтернативні рішення (якщо НЕ працює)
 
 #### Використання проксі
 Додайте в youtube_downloader.py:

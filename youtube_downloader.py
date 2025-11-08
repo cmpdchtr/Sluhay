@@ -9,10 +9,9 @@ class YouTubeDownloader:
     def __init__(self):
         """Ініціалізація завантажувача"""
         self.download_dir = config.DOWNLOADS_DIR
-        # Перевіряємо чи є файл з cookies (для обходу блокувань YouTube)
-        self.cookies_file = os.path.join(os.path.dirname(__file__), 'cookies.txt')
-        if not os.path.exists(self.cookies_file):
-            self.cookies_file = None
+        # COOKIES ВИМКНЕНО! Вони викликають проблеми з форматами YouTube.
+        # Бот працює КРАЩЕ без них!
+        self.cookies_file = None
     
     def download_audio(self, search_query: str, track_name: str) -> str | None:
         """
@@ -26,22 +25,20 @@ class YouTubeDownloader:
             Шлях до завантаженого файлу або None
         """
         try:
-            # Створюємо безпечне ім'я файлу (видаляємо всі спецсимволи окрім алфавітно-цифрових, пробілів, дефісів та підкреслень)
+            # Створюємо безпечне ім'я файлу
             safe_filename = "".join(
                 c for c in track_name if c.isalnum() or c in (' ', '-', '_')
             ).rstrip()
             
-            # Якщо після очищення файл порожній, використовуємо timestamp
             if not safe_filename:
                 import time
                 safe_filename = f"track_{int(time.time())}"
             
             output_path = os.path.join(self.download_dir, f"{safe_filename}.mp3")
             
-            # Налаштування для yt-dlp з обходом блокувань
+            # Спрощені налаштування - беремо будь-який доступний аудіо
             ydl_opts = {
-                # Використовуємо більш гнучкий формат з fallback опціями
-                'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
+                'format': 'ba/b',  # ba = best audio, b = best (якщо audio недоступно)
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
@@ -52,58 +49,29 @@ class YouTubeDownloader:
                 'no_warnings': True,
                 'default_search': 'ytsearch1',
                 'noplaylist': True,
-                'extract_flat': False,
-                'ignoreerrors': False,
                 'no_check_certificate': True,
                 'geo_bypass': True,
-                'age_limit': None,
-                # Додаємо retry і fragment опції
                 'retries': 10,
                 'fragment_retries': 10,
                 'skip_unavailable_fragments': True,
-                # Важливі опції для обходу 403 помилки
+                'ignore_no_formats_error': False,
                 'http_headers': {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'en-us,en;q=0.5',
-                    'Accept-Encoding': 'gzip,deflate',
-                    'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
                 },
-                # Додаткові опції для обходу обмежень YouTube
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android', 'web'],
-                        'player_skip': ['webpage', 'configs'],
-                        'skip': ['hls', 'dash'],
+                        'player_client': ['android'],
+                        'player_skip': ['webpage'],
                     }
                 },
-                # Використовуємо IPv4 (деякі сервери мають проблеми з IPv6)
-                'source_address': '0.0.0.0',
             }
             
-            # Якщо є файл cookies - використовуємо його
-            if self.cookies_file:
-                ydl_opts['cookiefile'] = self.cookies_file
+            # Cookies ВИМКНЕНО - вони викликають помилки!
+            # Бот працює стабільніше БЕЗ cookies
             
             # Завантажуємо аудіо
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(search_query, download=True)
-                
-                # Перевіряємо, чи є аудіо в результаті
-                if info and 'entries' in info:
-                    video_info = info['entries'][0] if info['entries'] else None
-                else:
-                    video_info = info
-                
-                # Якщо відео не має аудіо форматів
-                if video_info and 'formats' in video_info:
-                    has_audio = any(
-                        f.get('acodec') != 'none' and f.get('acodec') is not None 
-                        for f in video_info.get('formats', [])
-                    )
-                    if not has_audio:
-                        print("Відео не містить аудіо доріжки")
-                        return None
+                ydl.download([search_query])
             
             # Перевіряємо, чи файл створено
             if os.path.exists(output_path):
@@ -114,11 +82,13 @@ class YouTubeDownloader:
                 print(f"Пошук файлів в {self.download_dir}...")
                 
                 # Шукаємо будь-який .mp3 файл, створений щойно
+                import time
+                current_time = time.time()
                 for file in os.listdir(self.download_dir):
                     if file.endswith('.mp3'):
                         file_path = os.path.join(self.download_dir, file)
                         # Перевіряємо, чи файл створено недавно (менше 60 секунд тому)
-                        if os.path.getmtime(file_path) > (os.path.getctime(self.download_dir) if os.path.exists(self.download_dir) else 0):
+                        if current_time - os.path.getmtime(file_path) < 60:
                             print(f"Знайдено файл: {file_path}")
                             # Перейменовуємо файл на очікуване ім'я
                             try:
