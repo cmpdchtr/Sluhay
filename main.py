@@ -203,10 +203,19 @@ async def main():
     """Головна функція запуску бота"""
     logger.info("Бот Sluhay запущено!")
     try:
-        # Видаляємо старі оновлення
+        # Видаляємо старі оновлення та webhook
         await bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook очищено, старі оновлення видалено")
+        
         # Запускаємо polling
-        await dp.start_polling(bot)
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    except Exception as e:
+        if "Conflict" in str(e):
+            logger.error("⚠️  Виявлено конфлікт: інший екземпляр бота вже запущено!")
+            logger.error("Використайте 'stop_bot.ps1' (Windows) або 'stop_bot.sh' (Linux) для зупинки")
+        else:
+            logger.error(f"Помилка при запуску бота: {e}")
+        raise
     finally:
         await bot.session.close()
 

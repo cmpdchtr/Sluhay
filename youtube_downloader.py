@@ -40,7 +40,8 @@ class YouTubeDownloader:
             
             # Налаштування для yt-dlp з обходом блокувань
             ydl_opts = {
-                'format': 'bestaudio/best',
+                # Використовуємо більш гнучкий формат з fallback опціями
+                'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
@@ -56,6 +57,10 @@ class YouTubeDownloader:
                 'no_check_certificate': True,
                 'geo_bypass': True,
                 'age_limit': None,
+                # Додаємо retry і fragment опції
+                'retries': 10,
+                'fragment_retries': 10,
+                'skip_unavailable_fragments': True,
                 # Важливі опції для обходу 403 помилки
                 'http_headers': {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
