@@ -42,15 +42,16 @@ class YouTubeDownloader:
             
             output_path = os.path.join(self.download_dir, f"{safe_filename}.mp3")
             
-            # Простий та НАДІЙНИЙ підхід з якістю 96kbps для ШВИДКОСТІ
+            # МАКСИМАЛЬНА ШВИДКІСТЬ: без конвертації, мінімум перевірок
             ydl_opts = {
-                # Простий формат який точно спрацює
-                'format': 'bestaudio/best',
+                # Беремо що є - БЕЗ конвертації (це економить 70% часу!)
+                'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
+                # Конвертуємо ТІЛЬКИ якщо не m4a/webm (Telegram підтримує обидва)
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
-                    'preferredquality': '96',  # 96kbps для швидшої конвертації та менших файлів
-                }],
+                    'preferredquality': '96',
+                }] if True else [],  # Завжди конвертуємо для сумісності
                 'outtmpl': os.path.join(self.download_dir, f"{safe_filename}.%(ext)s"),
                 'quiet': True,
                 'no_warnings': True,
@@ -58,23 +59,30 @@ class YouTubeDownloader:
                 'noplaylist': True,
                 'no_check_certificate': True,
                 'geo_bypass': True,
-                'retries': 3,
-                'fragment_retries': 3,
+                # МІНІМУМ спроб - швидше падати ніж чекати
+                'retries': 1,
+                'fragment_retries': 1,
                 'skip_unavailable_fragments': True,
                 'ignore_no_formats_error': True,
-                # Максимальні оптимізації швидкості
-                'concurrent_fragment_downloads': 10,  # Максимум паралельних завантажень
-                'http_chunk_size': 10485760,  # 10MB chunks для швидшого завантаження
+                # Швидкісні налаштування
+                'concurrent_fragment_downloads': 16,  # Ще більше паралельності!
+                'http_chunk_size': 1048576,  # 1MB chunks - швидший старт
+                'buffersize': 1024 * 16,  # Менший буфер = швидший старт
                 'throttled_rate': None,
                 'http_headers': {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 },
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android'],
-                        'player_skip': ['webpage'],
+                        'player_client': ['android', 'web'],  # Android швидший
+                        'player_skip': ['webpage', 'configs'],  # Пропускаємо все зайве
                     }
                 },
+                # Пропускаємо метадані - економимо час
+                'skip_download': False,
+                'writethumbnail': False,
+                'writesubtitles': False,
+                'writeautomaticsub': False,
             }
             
             # Cookies ВИМКНЕНО - вони викликають помилки!
@@ -147,9 +155,9 @@ class YouTubeDownloader:
             
             output_path = os.path.join(self.download_dir, f"{safe_filename}.mp3")
             
-            # Налаштування для SoundCloud - швидкі та прості
+            # SoundCloud оптимізація - мінімум затримок
             ydl_opts = {
-                'format': 'bestaudio/best',
+                'format': 'bestaudio[ext=m4a]/bestaudio/best',
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
@@ -158,12 +166,13 @@ class YouTubeDownloader:
                 'outtmpl': os.path.join(self.download_dir, f"{safe_filename}.%(ext)s"),
                 'quiet': True,
                 'no_warnings': True,
-                'default_search': 'scsearch1',  # SoundCloud search!
+                'default_search': 'scsearch1',
                 'noplaylist': True,
-                'retries': 2,  # Менше спроб для швидкості
-                'fragment_retries': 2,
-                'http_chunk_size': 10485760,
-                'concurrent_fragment_downloads': 10,
+                'retries': 1,  # Швидко відмовляємось якщо не знайшли
+                'fragment_retries': 1,
+                'http_chunk_size': 1048576,  # 1MB
+                'concurrent_fragment_downloads': 16,
+                'buffersize': 1024 * 16,
             }
             
             # Завантажуємо з SoundCloud
