@@ -545,18 +545,6 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
                 except Exception as e:
                     logger.warning(f"Не вдалося відправити обкладинку плейлиста: {e}")
             
-            # Завантажуємо обкладинку для треків
-            thumbnail = None
-            if playlist_info.get('image_url'):
-                try:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(playlist_info['image_url']) as resp:
-                            if resp.status == 200:
-                                thumbnail_data = await resp.read()
-                                thumbnail = BufferedInputFile(thumbnail_data, filename="cover.jpg")
-                except Exception as e:
-                    logger.warning(f"Не вдалося завантажити обкладинку: {e}")
-            
             # Telegram дозволяє відправляти до 10 медіа-файлів за раз
             for i in range(0, len(downloaded_files), 10):
                 batch = downloaded_files[i:i+10]
@@ -565,11 +553,12 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
                 for file_info in batch:
                     audio_file = FSInputFile(file_info['path'])
                     
+                    # Не додаємо thumbnail - він не працює коректно в медіа-групах
+                    # Обкладинка вже показана в окремому повідомленні вище
                     media_group.append(InputMediaAudio(
                         media=audio_file,
                         title=file_info['title'],
-                        performer=file_info['performer'],
-                        thumbnail=thumbnail
+                        performer=file_info['performer']
                     ))
                 
                 # Відправляємо групу
@@ -708,18 +697,6 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
                 except Exception as e:
                     logger.warning(f"Не вдалося відправити обкладинку альбому: {e}")
             
-            # Завантажуємо обкладинку для треків
-            thumbnail = None
-            if album_info.get('image_url'):
-                try:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(album_info['image_url']) as resp:
-                            if resp.status == 200:
-                                thumbnail_data = await resp.read()
-                                thumbnail = BufferedInputFile(thumbnail_data, filename="cover.jpg")
-                except Exception as e:
-                    logger.warning(f"Не вдалося завантажити обкладинку: {e}")
-            
             # Telegram дозволяє відправляти до 10 медіа-файлів за раз
             for i in range(0, len(downloaded_files), 10):
                 batch = downloaded_files[i:i+10]
@@ -728,11 +705,12 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
                 for file_info in batch:
                     audio_file = FSInputFile(file_info['path'])
                     
+                    # Не додаємо thumbnail - він не працює коректно в медіа-групах
+                    # Обкладинка вже показана в окремому повідомленні вище
                     media_group.append(InputMediaAudio(
                         media=audio_file,
                         title=file_info['title'],
-                        performer=file_info['performer'],
-                        thumbnail=thumbnail
+                        performer=file_info['performer']
                     ))
                 
                 # Відправляємо групу
