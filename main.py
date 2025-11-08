@@ -4,7 +4,7 @@ import aiohttp
 import os
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command, CommandStart
-from aiogram.types import Message, FSInputFile, BufferedInputFile, InputMediaAudio, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, FSInputFile, BufferedInputFile, InputMediaAudio, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -48,7 +48,7 @@ def get_main_menu_keyboard():
             InlineKeyboardButton(text="⭐", callback_data="favorites")
         ],
         [
-            InlineKeyboardButton(text="⚙️ Налаштуванки", callback_data="settings"),
+            InlineKeyboardButton(text="⚙️ Налаштунки", callback_data="settings"),
             InlineKeyboardButton(text="👤 Профіль", callback_data="profile")
         ]
     ])
@@ -106,17 +106,27 @@ async def callback_back_to_main(callback: CallbackQuery, state: FSMContext):
 async def callback_search_track(callback: CallbackQuery, state: FSMContext):
     """Початок пошуку треку"""
     await state.set_state(SearchStates.waiting_for_track)
+    
+    # Створюємо Reply клавіатуру з кнопкою відміни та placeholder
+    cancel_keyboard = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="❌ Скасувати")]],
+        resize_keyboard=True,
+        input_field_placeholder="Виконавець - Назва треку"
+    )
+    
     await callback.message.edit_text(
         "🎵 <b>Пошук треку</b>\n\n"
-        "Надішли мені:\n"
-        "• Посилання на Spotify: <code>https://open.spotify.com/track/...</code>\n"
-        "• Або назву: <code>Виконавець - Назва пісні</code>\n\n"
-        "💡 Приклад: <code>The Weeknd - Blinding Lights</code>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="search")]
-        ])
+        "Введи назву треку або посилання Spotify:",
+        parse_mode=ParseMode.HTML
     )
+    
+    # Відправляємо окреме повідомлення з Reply клавіатурою
+    await callback.message.answer(
+        "📝 <i>Підказка: введи текст у форматі</i> <code>Виконавець - Назва</code>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=cancel_keyboard
+    )
+    
     await callback.answer()
 
 
@@ -124,17 +134,27 @@ async def callback_search_track(callback: CallbackQuery, state: FSMContext):
 async def callback_search_album(callback: CallbackQuery, state: FSMContext):
     """Початок пошуку альбому"""
     await state.set_state(SearchStates.waiting_for_album)
-    await callback.message.edit_text(
-        "� <b>Пошук альбому</b>\n\n"
-        "Надішли мені:\n"
-        "• Посилання на Spotify: <code>https://open.spotify.com/album/...</code>\n"
-        "• Або назву: <code>Виконавець - Назва альбому</code>\n\n"
-        "💡 Приклад: <code>Pink Floyd - The Dark Side of the Moon</code>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="search")]
-        ])
+    
+    # Створюємо Reply клавіатуру з кнопкою відміни та placeholder
+    cancel_keyboard = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="❌ Скасувати")]],
+        resize_keyboard=True,
+        input_field_placeholder="Виконавець - Назва альбому"
     )
+    
+    await callback.message.edit_text(
+        "💿 <b>Пошук альбому</b>\n\n"
+        "Введи назву альбому або посилання Spotify:",
+        parse_mode=ParseMode.HTML
+    )
+    
+    # Відправляємо окреме повідомлення з Reply клавіатурою
+    await callback.message.answer(
+        "📝 <i>Підказка: введи текст у форматі</i> <code>Виконавець - Назва альбому</code>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=cancel_keyboard
+    )
+    
     await callback.answer()
 
 
@@ -142,17 +162,27 @@ async def callback_search_album(callback: CallbackQuery, state: FSMContext):
 async def callback_search_playlist(callback: CallbackQuery, state: FSMContext):
     """Початок пошуку плейліста"""
     await state.set_state(SearchStates.waiting_for_playlist)
+    
+    # Створюємо Reply клавіатуру з кнопкою відміни та placeholder
+    cancel_keyboard = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="❌ Скасувати")]],
+        resize_keyboard=True,
+        input_field_placeholder="Назва плейліста"
+    )
+    
     await callback.message.edit_text(
         "📋 <b>Пошук плейліста</b>\n\n"
-        "Надішли мені:\n"
-        "• Посилання на Spotify: <code>https://open.spotify.com/playlist/...</code>\n"
-        "• Або назву плейліста\n\n"
-        "💡 Приклад: <code>Today's Top Hits</code>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="search")]
-        ])
+        "Введи назву плейліста або посилання Spotify:",
+        parse_mode=ParseMode.HTML
     )
+    
+    # Відправляємо окреме повідомлення з Reply клавіатурою
+    await callback.message.answer(
+        "📝 <i>Підказка: введи назву плейліста</i>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=cancel_keyboard
+    )
+    
     await callback.answer()
 
 
@@ -179,6 +209,24 @@ async def callback_settings(callback: CallbackQuery):
 async def callback_profile(callback: CallbackQuery):
     """Профіль (поки заглушка)"""
     await callback.answer("👤 Профіль - скоро буде доступно!", show_alert=True)
+
+
+# Обробник кнопки "Скасувати"
+@dp.message(F.text == "❌ Скасувати")
+async def cancel_search(message: Message, state: FSMContext):
+    """Скасування пошуку"""
+    await state.clear()
+    user_name = message.from_user.first_name or "друже"
+    await message.answer(
+        f"❌ Пошук скасовано.\n\n"
+        f"👋 {user_name}! Що будемо слухати сьогодні?",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    # Відправляємо головне меню
+    await message.answer(
+        "Вибери опцію:",
+        reply_markup=get_main_menu_keyboard()
+    )
 
 
 @dp.message(Command("help"))
@@ -391,7 +439,9 @@ async def cmd_test(message: Message):
 async def process_track_search(message: Message, state: FSMContext):
     """Обробка пошуку треку після натискання кнопки"""
     user_input = message.text.strip()
-    status_msg = await message.answer("🔍 Аналізую запит...")
+    
+    # Прибираємо Reply клавіатуру
+    status_msg = await message.answer("🔍 Аналізую запит...", reply_markup=ReplyKeyboardRemove())
     
     try:
         # Визначаємо тип введення
@@ -410,7 +460,9 @@ async def process_track_search(message: Message, state: FSMContext):
 async def process_album_search(message: Message, state: FSMContext):
     """Обробка пошуку альбому після натискання кнопки"""
     user_input = message.text.strip()
-    status_msg = await message.answer("🔍 Аналізую запит...")
+    
+    # Прибираємо Reply клавіатуру
+    status_msg = await message.answer("🔍 Аналізую запит...", reply_markup=ReplyKeyboardRemove())
     
     try:
         # Визначаємо тип введення
@@ -429,7 +481,9 @@ async def process_album_search(message: Message, state: FSMContext):
 async def process_playlist_search(message: Message, state: FSMContext):
     """Обробка пошуку плейліста після натискання кнопки"""
     user_input = message.text.strip()
-    status_msg = await message.answer("🔍 Аналізую запит...")
+    
+    # Прибираємо Reply клавіатуру
+    status_msg = await message.answer("🔍 Аналізую запит...", reply_markup=ReplyKeyboardRemove())
     
     try:
         # Визначаємо тип введення
