@@ -339,6 +339,40 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
                 parse_mode=ParseMode.HTML
             )
             
+            # Спочатку відправляємо обкладинку плейлиста з описом
+            if playlist_info.get('image_url'):
+                try:
+                    caption = (
+                        f"📋 <b>{playlist_info['name']}</b>\n"
+                        f"👤 <b>Автор:</b> {playlist_info['owner']}\n"
+                        f"🎵 <b>Треків:</b> {total_tracks}\n"
+                        f"✅ <b>Завантажено:</b> {len(downloaded_files)}/{total_tracks}"
+                    )
+                    
+                    if failed_tracks:
+                        caption += f"\n❌ <b>Пропущено:</b> {len(failed_tracks)}"
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(playlist_info['image_url']) as resp:
+                            if resp.status == 200:
+                                photo_data = await resp.read()
+                                photo = BufferedInputFile(photo_data, filename="playlist_cover.jpg")
+                                await message.answer_photo(photo=photo, caption=caption, parse_mode=ParseMode.HTML)
+                except Exception as e:
+                    logger.warning(f"Не вдалося відправити обкладинку плейлиста: {e}")
+            
+            # Завантажуємо обкладинку для треків
+            thumbnail = None
+            if playlist_info.get('image_url'):
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(playlist_info['image_url']) as resp:
+                            if resp.status == 200:
+                                thumbnail_data = await resp.read()
+                                thumbnail = BufferedInputFile(thumbnail_data, filename="cover.jpg")
+                except Exception as e:
+                    logger.warning(f"Не вдалося завантажити обкладинку: {e}")
+            
             # Telegram дозволяє відправляти до 10 медіа-файлів за раз
             for i in range(0, len(downloaded_files), 10):
                 batch = downloaded_files[i:i+10]
@@ -346,13 +380,12 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
                 
                 for file_info in batch:
                     audio_file = FSInputFile(file_info['path'])
-                    caption = f"🎵 {file_info['title']}\n👤 {file_info['performer']}"
                     
                     media_group.append(InputMediaAudio(
                         media=audio_file,
                         title=file_info['title'],
                         performer=file_info['performer'],
-                        caption=caption if len(media_group) == 0 else None  # Тільки перший файл з описом
+                        thumbnail=thumbnail
                     ))
                 
                 # Відправляємо групу
@@ -362,17 +395,8 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
                 for file_info in batch:
                     youtube.cleanup_file(file_info['path'])
             
-            # Фінальне повідомлення
-            result_text = (
-                f"✅ <b>Готово!</b>\n\n"
-                f"📋 <b>{playlist_info['name']}</b>\n"
-                f"✅ Відправлено: {len(downloaded_files)}/{total_tracks}"
-            )
-            
-            if failed_tracks:
-                result_text += f"\n❌ Не вдалося завантажити: {len(failed_tracks)}"
-            
-            await status_msg.edit_text(result_text, parse_mode=ParseMode.HTML)
+            # Видаляємо статусне повідомлення
+            await status_msg.delete()
         else:
             await status_msg.edit_text(
                 "❌ Не вдалося завантажити жодного треку з плейлиста.",
@@ -476,6 +500,41 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
                 parse_mode=ParseMode.HTML
             )
             
+            # Спочатку відправляємо обкладинку альбому з описом
+            if album_info.get('image_url'):
+                try:
+                    caption = (
+                        f"💿 <b>{album_info['name']}</b>\n"
+                        f"👤 <b>Виконавець:</b> {album_info['artist']}\n"
+                        f"📅 <b>Рік:</b> {album_info['release_date']}\n"
+                        f"🎵 <b>Треків:</b> {total_tracks}\n"
+                        f"✅ <b>Завантажено:</b> {len(downloaded_files)}/{total_tracks}"
+                    )
+                    
+                    if failed_tracks:
+                        caption += f"\n❌ <b>Пропущено:</b> {len(failed_tracks)}"
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(album_info['image_url']) as resp:
+                            if resp.status == 200:
+                                photo_data = await resp.read()
+                                photo = BufferedInputFile(photo_data, filename="album_cover.jpg")
+                                await message.answer_photo(photo=photo, caption=caption, parse_mode=ParseMode.HTML)
+                except Exception as e:
+                    logger.warning(f"Не вдалося відправити обкладинку альбому: {e}")
+            
+            # Завантажуємо обкладинку для треків
+            thumbnail = None
+            if album_info.get('image_url'):
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(album_info['image_url']) as resp:
+                            if resp.status == 200:
+                                thumbnail_data = await resp.read()
+                                thumbnail = BufferedInputFile(thumbnail_data, filename="cover.jpg")
+                except Exception as e:
+                    logger.warning(f"Не вдалося завантажити обкладинку: {e}")
+            
             # Telegram дозволяє відправляти до 10 медіа-файлів за раз
             for i in range(0, len(downloaded_files), 10):
                 batch = downloaded_files[i:i+10]
@@ -483,13 +542,12 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
                 
                 for file_info in batch:
                     audio_file = FSInputFile(file_info['path'])
-                    caption = f"🎵 {file_info['title']}\n👤 {file_info['performer']}"
                     
                     media_group.append(InputMediaAudio(
                         media=audio_file,
                         title=file_info['title'],
                         performer=file_info['performer'],
-                        caption=caption if len(media_group) == 0 else None  # Тільки перший файл з описом
+                        thumbnail=thumbnail
                     ))
                 
                 # Відправляємо групу
@@ -499,18 +557,8 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
                 for file_info in batch:
                     youtube.cleanup_file(file_info['path'])
             
-            # Фінальне повідомлення
-            result_text = (
-                f"✅ <b>Готово!</b>\n\n"
-                f"💿 <b>{album_info['name']}</b>\n"
-                f"👤 {album_info['artist']}\n"
-                f"✅ Відправлено: {len(downloaded_files)}/{total_tracks}"
-            )
-            
-            if failed_tracks:
-                result_text += f"\n❌ Не вдалося завантажити: {len(failed_tracks)}"
-            
-            await status_msg.edit_text(result_text, parse_mode=ParseMode.HTML)
+            # Видаляємо статусне повідомлення
+            await status_msg.delete()
         else:
             await status_msg.edit_text(
                 "❌ Не вдалося завантажити жодного треку з альбому.",
