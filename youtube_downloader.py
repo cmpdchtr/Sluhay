@@ -42,15 +42,14 @@ class YouTubeDownloader:
             
             output_path = os.path.join(self.download_dir, f"{safe_filename}.mp3")
             
-            # Баланс між ШВИДКІСТЮ та НАДІЙНІСТЮ
+            # МАКСИМАЛЬНА ШВИДКІСТЬ - обмежуємо якість для маленьких файлів
             ydl_opts = {
-                # Спочатку намагаємось отримати невеликі аудіо файли, потім більші
+                # Обмежуємо бітрейт для швидкості - менший бітрейт = менший файл = швидше
                 'format': (
-                    'bestaudio[filesize<10M]/'  # Спочатку файли до 10MB
-                    'bestaudio[filesize<20M]/'  # Потім до 20MB
-                    'bestaudio/'                 # Потім будь-яке аудіо
-                    'best[filesize<15M]/'       # Відео+аудіо до 15MB
-                    'best'                       # В крайньому випадку - будь-що
+                    'bestaudio[abr<=96]/'      # Спочатку до 96kbps (дуже швидко)
+                    'bestaudio[abr<=128]/'     # Потім до 128kbps (швидко)
+                    'bestaudio[abr<=160]/'     # До 160kbps (нормально)
+                    'bestaudio'                 # Будь-яке аудіо
                 ),
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
@@ -64,22 +63,27 @@ class YouTubeDownloader:
                 'noplaylist': True,
                 'no_check_certificate': True,
                 'geo_bypass': True,
-                'retries': 3,
-                'fragment_retries': 3,
+                'retries': 2,  # Зменшено до 2 для швидшої відмови
+                'fragment_retries': 2,
                 'skip_unavailable_fragments': True,
                 'ignore_no_formats_error': True,
-                # Оптимізації швидкості
-                'concurrent_fragment_downloads': 5,  # Збільшено для швидшого завантаження
-                'buffer_size': 1024 * 128,  # Збільшено буфер
-                'http_chunk_size': 1024 * 1024 * 2,  # 2MB chunks
+                # Агресивні оптимізації швидкості
+                'concurrent_fragment_downloads': 8,  # Ще більше паралельних завантажень
+                'buffer_size': 1024 * 256,  # Великий буфер - 256KB
+                'http_chunk_size': 1024 * 1024 * 5,  # 5MB chunks
+                'extractor_retries': 1,  # Тільки 1 спроба для extractor
+                'file_access_retries': 2,
                 'throttled_rate': None,
                 'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': '*/*',
+                    'Accept-Encoding': 'gzip, deflate',
+                    'Connection': 'keep-alive',
                 },
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android', 'web'],
-                        'player_skip': ['webpage', 'configs'],
+                        'player_client': ['android'],  # Тільки android - він найшвидший
+                        'player_skip': ['webpage', 'configs', 'js'],  # Пропускаємо все зайве
                     }
                 },
             }
