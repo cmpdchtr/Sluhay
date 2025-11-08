@@ -2,7 +2,7 @@ import asyncio
 import logging
 import aiohttp
 import os
-from aiogram import Bot, Dispatcher, F
+from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.types import Message, FSInputFile, BufferedInputFile
 from aiogram.enums import ParseMode
@@ -76,31 +76,65 @@ async def handle_message(message: Message):
     user_input = message.text.strip()
     
     # Відправляємо повідомлення про обробку
-    status_msg = await message.answer("🔍 Шукаю трек...")
+    status_msg = await message.answer("🔍 Аналізую запит...")
     
     try:
-        track_info = None
-        
         # Перевіряємо, чи це посилання Spotify
         if "spotify.com" in user_input or "spotify:" in user_input:
-            logger.info(f"Обробка Spotify URL: {user_input}")
-            track_info = spotify.get_track_info(user_input)
-            
-            if not track_info:
+            # Визначаємо тип посилання
+            if "/playlist/" in user_input or ":playlist:" in user_input:
+                await handle_playlist(message, status_msg, user_input)
+                return
+            elif "/album/" in user_input or ":album:" in user_input:
+                await handle_album(message, status_msg, user_input)
+                return
+            elif "/track/" in user_input or ":track:" in user_input:
+                await handle_track(message, status_msg, user_input)
+                return
+            else:
                 await status_msg.edit_text(
-                    "❌ Не вдалося отримати інформацію про трек зі Spotify.\n"
-                    "Перевір посилання і спробуй ще раз."
+                    "❌ Непідтримуваний тип посилання Spotify.\n"
+                    "Підтримуються: треки, альбоми та плейлисти."
                 )
                 return
         else:
             # Пошук треку за текстовим запитом
+            await handle_track(message, status_msg, user_input, is_search=True)
+            return
+            
+    except Exception as e:
+        logger.error(f"Помилка при обробці запиту: {e}")
+        await status_msg.edit_text(
+            "❌ Виникла помилка при обробці запиту.\n"
+            "Спробуй ще раз або звернись до розробника."
+        )
+
+
+async def handle_track(message: Message, status_msg: Message, user_input: str, is_search: bool = False):
+    """Обробка одного треку"""
+    try:
+        track_info = None
+        
+        if is_search:
             logger.info(f"Пошук треку: {user_input}")
+            await status_msg.edit_text("🔍 Шукаю трек...")
             track_info = spotify.search_track(user_input)
             
             if not track_info:
                 await status_msg.edit_text(
                     "❌ Трек не знайдено на Spotify.\n"
                     "Спробуй інший запит або надішли посилання."
+                )
+                return
+        else:
+            logger.info(f"Обробка Spotify URL: {user_input}")
+            await status_msg.edit_text("🔍 Шукаю трек...")
+            track_info = spotify.get_track_info(user_input)
+            
+            if not track_info:
+                await status_msg.edit_text(
+                    "❌ Не вдалося отримати інформацію про трек зі Spotify.\n"
+                    "Перевір посилання і спробуй ще раз."
                 )
                 return
         
@@ -195,6 +229,174 @@ async def handle_message(message: Message):
         logger.error(f"Помилка при обробці запиту: {e}")
         await status_msg.edit_text(
             "❌ Виникла помилка при обробці запиту.\n"
+            "Спробуй ще раз або звернись до розробника."
+        )
+
+
+async def handle_playlist(message: types.Message, status_msg: types.Message, user_input: str):
+    """Обробка плейлиста зі Spotify"""
+    try:
+        # Отримуємо інформацію про плейліст
+        playlist_info = spotify.get_playlist_info(user_input)
+        
+        if not playlist_info:
+            await status_msg.edit_text(
+                "❌ Не вдалося отримати інформацію про плейліст зі Spotify.\n"
+                "Перевір посилання і спробуй ще раз."
+            )
+            return
+        
+        tracks = playlist_info['tracks']
+        total_tracks = len(tracks)
+        
+        # Виводимо інформацію про плейліст
+        info_text = (
+            f"✅ Знайдено плейліст!\n\n"
+            f"📋 <b>{playlist_info['name']}</b>\n"
+            f"👤 {playlist_info['owner']}\n"
+            f"🎵 Треків: {total_tracks}\n\n"
+            f"⏳ Завантажую..."
+        )
+        await status_msg.edit_text(info_text, parse_mode=ParseMode.HTML)
+        
+        # Завантажуємо кожен трек
+        successful = 0
+        for index, track_info in enumerate(tracks, 1):
+            try:
+                await status_msg.edit_text(
+                    f"⏳ Завантажую трек {index}/{total_tracks}...\n\n"
+                    f"🎵 {track_info['name']}\n"
+                    f"👤 {track_info['artists']}",
+                    parse_mode=ParseMode.HTML
+                )
+                
+                # Завантажуємо аудіо з YouTube
+                audio_path = youtube.download_audio(
+                    track_info['search_query'],
+                    f"{track_info['artists']} - {track_info['name']}"
+                )
+                
+                if not audio_path:
+                    logger.warning(f"Пропущено трек: {track_info['name']}")
+                    continue
+                
+                # Відправляємо аудіо з мінімальним описом
+                caption = f"🎵 <b>{track_info['name']}</b>\n👤 {track_info['artists']}"
+                
+                audio_file = FSInputFile(audio_path)
+                await message.answer_audio(
+                    audio=audio_file,
+                    title=track_info['name'],
+                    performer=track_info['artists'],
+                    caption=caption,
+                    parse_mode=ParseMode.HTML
+                )
+                
+                # Видаляємо файл після відправки
+                youtube.cleanup_file(audio_path)
+                successful += 1
+                
+            except Exception as e:
+                logger.error(f"Помилка при завантаженні треку {track_info['name']}: {e}")
+                continue
+        
+        # Фінальне повідомлення
+        await status_msg.edit_text(
+            f"✅ Готово!\n\n"
+            f"📋 <b>{playlist_info['name']}</b>\n"
+            f"✅ Завантажено: {successful}/{total_tracks}",
+            parse_mode=ParseMode.HTML
+        )
+        
+    except Exception as e:
+        logger.error(f"Помилка при обробці плейлиста: {e}")
+        await status_msg.edit_text(
+            "❌ Виникла помилка при обробці плейлиста.\n"
+            "Спробуй ще раз або звернись до розробника."
+        )
+
+
+async def handle_album(message: types.Message, status_msg: types.Message, user_input: str):
+    """Обробка альбому зі Spotify"""
+    try:
+        # Отримуємо інформацію про альбом
+        album_info = spotify.get_album_info(user_input)
+        
+        if not album_info:
+            await status_msg.edit_text(
+                "❌ Не вдалося отримати інформацію про альбом зі Spotify.\n"
+                "Перевір посилання і спробуй ще раз."
+            )
+            return
+        
+        tracks = album_info['tracks']
+        total_tracks = len(tracks)
+        
+        # Виводимо інформацію про альбом
+        info_text = (
+            f"✅ Знайдено альбом!\n\n"
+            f"💿 <b>{album_info['name']}</b>\n"
+            f"👤 {album_info['artist']}\n"
+            f"📅 {album_info['release_date']}\n"
+            f"🎵 Треків: {total_tracks}\n\n"
+            f"⏳ Завантажую..."
+        )
+        await status_msg.edit_text(info_text, parse_mode=ParseMode.HTML)
+        
+        # Завантажуємо кожен трек
+        successful = 0
+        for index, track_info in enumerate(tracks, 1):
+            try:
+                await status_msg.edit_text(
+                    f"⏳ Завантажую трек {index}/{total_tracks}...\n\n"
+                    f"🎵 {track_info['name']}\n"
+                    f"👤 {track_info['artists']}",
+                    parse_mode=ParseMode.HTML
+                )
+                
+                # Завантажуємо аудіо з YouTube
+                audio_path = youtube.download_audio(
+                    track_info['search_query'],
+                    f"{track_info['artists']} - {track_info['name']}"
+                )
+                
+                if not audio_path:
+                    logger.warning(f"Пропущено трек: {track_info['name']}")
+                    continue
+                
+                # Відправляємо аудіо з мінімальним описом
+                caption = f"🎵 <b>{track_info['name']}</b>\n👤 {track_info['artists']}"
+                
+                audio_file = FSInputFile(audio_path)
+                await message.answer_audio(
+                    audio=audio_file,
+                    title=track_info['name'],
+                    performer=track_info['artists'],
+                    caption=caption,
+                    parse_mode=ParseMode.HTML
+                )
+                
+                # Видаляємо файл після відправки
+                youtube.cleanup_file(audio_path)
+                successful += 1
+                
+            except Exception as e:
+                logger.error(f"Помилка при завантаженні треку {track_info['name']}: {e}")
+                continue
+        
+        # Фінальне повідомлення
+        await status_msg.edit_text(
+            f"✅ Готово!\n\n"
+            f"💿 <b>{album_info['name']}</b>\n"
+            f"👤 {album_info['artist']}\n"
+            f"✅ Завантажено: {successful}/{total_tracks}",
+            parse_mode=ParseMode.HTML
+        )
+        
+    except Exception as e:
+        logger.error(f"Помилка при обробці альбому: {e}")
+        await status_msg.edit_text(
+            "❌ Виникла помилка при обробці альбому.\n"
             "Спробуй ще раз або звернись до розробника."
         )
 
