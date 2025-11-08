@@ -43,7 +43,8 @@ async def cmd_start(message: Message):
         "• The Weeknd - Blinding Lights\n\n"
         "❓ Команди:\n"
         "/start - Почати роботу з ботом\n"
-        "/help - Допомога"
+        "/help - Допомога\n"
+        "/test - Тестування функціоналу"
     )
     await message.answer(welcome_text, parse_mode=ParseMode.HTML)
 
@@ -69,9 +70,190 @@ async def cmd_help(message: Message):
         "• Якість аудіо: 192 kbps MP3\n"
         "• Максимальний розмір файлу: 50 МБ\n"
         "• Бот шукає трек на YouTube за даними зі Spotify\n\n"
+        "🧪 <b>Тестування:</b>\n"
+        "Використай /test для швидкої перевірки функціоналу без завантаження файлів.\n\n"
         "❓ Питання чи проблеми? Напиши в тех. підтримку - @cmpdchtr!"
     )
     await message.answer(help_text, parse_mode=ParseMode.HTML)
+
+
+@dp.message(Command("test"))
+async def cmd_test(message: Message):
+    """Обробник команди /test для тестування без завантаження"""
+    # Отримуємо аргумент команди
+    args = message.text.split(maxsplit=1)
+    
+    if len(args) < 2:
+        test_help = (
+            "🧪 <b>Команда для тестування</b>\n\n"
+            "Використання: /test [тип]\n\n"
+            "<b>Доступні типи:</b>\n"
+            "• <code>/test трек</code> - тестування одного треку\n"
+            "• <code>/test альбом</code> - тестування альбому\n"
+            "• <code>/test плейліст</code> - тестування плейлиста\n\n"
+            "💡 Ця команда імітує завантаження без реального скачування файлів."
+        )
+        await message.answer(test_help, parse_mode=ParseMode.HTML)
+        return
+    
+    test_type = args[1].lower().strip()
+    status_msg = await message.answer("🧪 Тестування...")
+    
+    try:
+        if test_type in ["трек", "track"]:
+            # Імітація завантаження треку
+            await status_msg.edit_text("🔍 Шукаю трек...")
+            await asyncio.sleep(0.5)
+            
+            track_info = spotify.search_track("The Weeknd Blinding Lights")
+            
+            if track_info:
+                info_text = (
+                    f"✅ Знайдено трек!\n\n"
+                    f"🎵 <b>{track_info['name']}</b>\n"
+                    f"👤 {track_info['artists']}\n"
+                    f"💿 Альбом: {track_info['album']}\n\n"
+                    f"⏳ [Тестовий режим - файл не завантажується]"
+                )
+                await status_msg.edit_text(info_text, parse_mode=ParseMode.HTML)
+                
+                # Показуємо обкладинку
+                if track_info.get('image_url'):
+                    try:
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(track_info['image_url']) as resp:
+                                if resp.status == 200:
+                                    photo_data = await resp.read()
+                                    photo = BufferedInputFile(photo_data, filename="test_cover.jpg")
+                                    caption = (
+                                        f"🧪 <b>Тест треку</b>\n\n"
+                                        f"🎵 <b>{track_info['name']}</b>\n"
+                                        f"👤 <b>Виконавець:</b> {track_info['artists']}\n"
+                                        f"💿 <b>Альбом:</b> {track_info['album']}\n\n"
+                                        f"✅ Всі дані отримано успішно!"
+                                    )
+                                    await message.answer_photo(photo=photo, caption=caption, parse_mode=ParseMode.HTML)
+                                    await status_msg.delete()
+                    except Exception as e:
+                        logger.warning(f"Не вдалося завантажити обкладинку: {e}")
+            else:
+                await status_msg.edit_text("❌ Тестовий трек не знайдено.")
+        
+        elif test_type in ["альбом", "album"]:
+            # Імітація завантаження альбому
+            await status_msg.edit_text("🔍 Шукаю альбом...")
+            await asyncio.sleep(0.5)
+            
+            search_result = spotify.search_album("The Weeknd After Hours")
+            
+            if search_result:
+                album_info = spotify.get_album_info(search_result['url'])
+                
+                if album_info:
+                    tracks = album_info['tracks']
+                    total_tracks = len(tracks)
+                    
+                    # Імітація завантаження треків
+                    for i in range(1, min(4, total_tracks + 1)):
+                        await status_msg.edit_text(
+                            f"💿 <b>{album_info['name']}</b>\n\n"
+                            f"⏳ Завантаження: {i}/{total_tracks}\n"
+                            f"🎵 {tracks[i-1]['name']}\n"
+                            f"👤 {tracks[i-1]['artists']}\n\n"
+                            f"[Тестовий режим]",
+                            parse_mode=ParseMode.HTML
+                        )
+                        await asyncio.sleep(0.3)
+                    
+                    # Відправляємо обкладинку з інфо
+                    if album_info.get('image_url'):
+                        try:
+                            async with aiohttp.ClientSession() as session:
+                                async with session.get(album_info['image_url']) as resp:
+                                    if resp.status == 200:
+                                        photo_data = await resp.read()
+                                        photo = BufferedInputFile(photo_data, filename="test_album.jpg")
+                                        caption = (
+                                            f"🧪 <b>Тест альбому</b>\n\n"
+                                            f"💿 <b>{album_info['name']}</b>\n"
+                                            f"👤 <b>Виконавець:</b> {album_info['artist']}\n"
+                                            f"📅 <b>Рік:</b> {album_info['release_date']}\n"
+                                            f"🎵 <b>Треків:</b> {total_tracks}\n\n"
+                                            f"✅ Всі дані отримано успішно!\n"
+                                            f"💡 У реальному режимі буде завантажено {total_tracks} треків."
+                                        )
+                                        await message.answer_photo(photo=photo, caption=caption, parse_mode=ParseMode.HTML)
+                                        await status_msg.delete()
+                        except Exception as e:
+                            logger.warning(f"Не вдалося завантажити обкладинку: {e}")
+                else:
+                    await status_msg.edit_text("❌ Не вдалося отримати інформацію про альбом.")
+            else:
+                await status_msg.edit_text("❌ Тестовий альбом не знайдено.")
+        
+        elif test_type in ["плейліст", "плейлист", "playlist"]:
+            # Імітація завантаження плейлиста
+            await status_msg.edit_text("🔍 Шукаю плейліст...")
+            await asyncio.sleep(0.5)
+            
+            search_result = spotify.search_playlist("Today's Top Hits")
+            
+            if search_result:
+                playlist_info = spotify.get_playlist_info(search_result['url'])
+                
+                if playlist_info:
+                    tracks = playlist_info['tracks']
+                    total_tracks = len(tracks)
+                    
+                    # Імітація завантаження треків
+                    for i in range(1, min(4, total_tracks + 1)):
+                        await status_msg.edit_text(
+                            f"📋 <b>{playlist_info['name']}</b>\n\n"
+                            f"⏳ Завантаження: {i}/{total_tracks}\n"
+                            f"🎵 {tracks[i-1]['name']}\n"
+                            f"👤 {tracks[i-1]['artists']}\n\n"
+                            f"[Тестовий режим]",
+                            parse_mode=ParseMode.HTML
+                        )
+                        await asyncio.sleep(0.3)
+                    
+                    # Відправляємо обкладинку з інфо
+                    if playlist_info.get('image_url'):
+                        try:
+                            async with aiohttp.ClientSession() as session:
+                                async with session.get(playlist_info['image_url']) as resp:
+                                    if resp.status == 200:
+                                        photo_data = await resp.read()
+                                        photo = BufferedInputFile(photo_data, filename="test_playlist.jpg")
+                                        caption = (
+                                            f"🧪 <b>Тест плейлиста</b>\n\n"
+                                            f"📋 <b>{playlist_info['name']}</b>\n"
+                                            f"👤 <b>Автор:</b> {playlist_info['owner']}\n"
+                                            f"🎵 <b>Треків:</b> {total_tracks}\n\n"
+                                            f"✅ Всі дані отримано успішно!\n"
+                                            f"💡 У реальному режимі буде завантажено {total_tracks} треків."
+                                        )
+                                        await message.answer_photo(photo=photo, caption=caption, parse_mode=ParseMode.HTML)
+                                        await status_msg.delete()
+                        except Exception as e:
+                            logger.warning(f"Не вдалося завантажити обкладинку: {e}")
+                else:
+                    await status_msg.edit_text("❌ Не вдалося отримати інформацію про плейліст.")
+            else:
+                await status_msg.edit_text("❌ Тестовий плейліст не знайдено.")
+        
+        else:
+            await status_msg.edit_text(
+                f"❌ Невідомий тип тесту: {test_type}\n\n"
+                f"Використай: /test трек, /test альбом, або /test плейліст"
+            )
+    
+    except Exception as e:
+        logger.error(f"Помилка при тестуванні: {e}")
+        await status_msg.edit_text(
+            "❌ Виникла помилка при тестуванні.\n"
+            "Спробуй ще раз."
+        )
 
 
 @dp.message(F.text)
