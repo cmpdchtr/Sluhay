@@ -42,15 +42,10 @@ class YouTubeDownloader:
             
             output_path = os.path.join(self.download_dir, f"{safe_filename}.mp3")
             
-            # МАКСИМАЛЬНА ШВИДКІСТЬ - обмежуємо якість для маленьких файлів
+            # Простий та НАДІЙНИЙ підхід - як раніше, але з оптимізаціями
             ydl_opts = {
-                # Обмежуємо бітрейт для швидкості - менший бітрейт = менший файл = швидше
-                'format': (
-                    'bestaudio[abr<=96]/'      # Спочатку до 96kbps (дуже швидко)
-                    'bestaudio[abr<=128]/'     # Потім до 128kbps (швидко)
-                    'bestaudio[abr<=160]/'     # До 160kbps (нормально)
-                    'bestaudio'                 # Будь-яке аудіо
-                ),
+                # Простий формат який точно спрацює
+                'format': 'bestaudio/best',
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
@@ -63,27 +58,21 @@ class YouTubeDownloader:
                 'noplaylist': True,
                 'no_check_certificate': True,
                 'geo_bypass': True,
-                'retries': 2,  # Зменшено до 2 для швидшої відмови
-                'fragment_retries': 2,
+                'retries': 3,
+                'fragment_retries': 3,
                 'skip_unavailable_fragments': True,
                 'ignore_no_formats_error': True,
-                # Агресивні оптимізації швидкості
-                'concurrent_fragment_downloads': 8,  # Ще більше паралельних завантажень
-                'buffer_size': 1024 * 256,  # Великий буфер - 256KB
-                'http_chunk_size': 1024 * 1024 * 5,  # 5MB chunks
-                'extractor_retries': 1,  # Тільки 1 спроба для extractor
-                'file_access_retries': 2,
+                # Максимальні оптимізації швидкості
+                'concurrent_fragment_downloads': 10,  # Максимум паралельних завантажень
+                'http_chunk_size': 10485760,  # 10MB chunks для швидшого завантаження
                 'throttled_rate': None,
                 'http_headers': {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Accept': '*/*',
-                    'Accept-Encoding': 'gzip, deflate',
-                    'Connection': 'keep-alive',
                 },
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android'],  # Тільки android - він найшвидший
-                        'player_skip': ['webpage', 'configs', 'js'],  # Пропускаємо все зайве
+                        'player_client': ['android'],
+                        'player_skip': ['webpage'],
                     }
                 },
             }
