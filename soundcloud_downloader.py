@@ -45,7 +45,7 @@ class SoundCloudDownloader:
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
-                    'preferredquality': '96',
+                    'preferredquality': '128',
                 }],
                 'outtmpl': os.path.join(self.download_dir, f"{safe_filename}.%(ext)s"),
                 'quiet': True,
