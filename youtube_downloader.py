@@ -42,14 +42,14 @@ class YouTubeDownloader:
             
             output_path = os.path.join(self.download_dir, f"{safe_filename}.mp3")
             
-            # Простий та НАДІЙНИЙ підхід - як раніше, але з оптимізаціями
+            # Простий та НАДІЙНИЙ підхід з якістю 96kbps для ШВИДКОСТІ
             ydl_opts = {
                 # Простий формат який точно спрацює
                 'format': 'bestaudio/best',
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
-                    'preferredquality': '128',
+                    'preferredquality': '96',  # 96kbps для швидшої конвертації та менших файлів
                 }],
                 'outtmpl': os.path.join(self.download_dir, f"{safe_filename}.%(ext)s"),
                 'quiet': True,
