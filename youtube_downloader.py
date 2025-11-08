@@ -42,13 +42,14 @@ class YouTubeDownloader:
             
             output_path = os.path.join(self.download_dir, f"{safe_filename}.mp3")
             
-            # Спрощені налаштування - беремо будь-який доступний аудіо
+            # Оптимізовані налаштування для ШВИДКОСТІ
             ydl_opts = {
-                'format': 'ba/b',  # ba = best audio, b = best (якщо audio недоступно)
+                # Беремо середню якість замість найкращої - швидше завантажується і менший розмір
+                'format': 'bestaudio[abr<=128]/bestaudio[abr<=192]/ba',
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
-                    'preferredquality': '192',
+                    'preferredquality': '128',  # Знижено з 192 для швидшої конвертації
                 }],
                 'outtmpl': os.path.join(self.download_dir, f"{safe_filename}.%(ext)s"),
                 'quiet': True,
@@ -57,17 +58,23 @@ class YouTubeDownloader:
                 'noplaylist': True,
                 'no_check_certificate': True,
                 'geo_bypass': True,
-                'retries': 10,
-                'fragment_retries': 10,
+                # Зменшено кількість спроб для швидшої роботи
+                'retries': 3,
+                'fragment_retries': 3,
                 'skip_unavailable_fragments': True,
                 'ignore_no_formats_error': False,
+                # Оптимізації швидкості
+                'concurrent_fragment_downloads': 4,  # Паралельне завантаження фрагментів
+                'buffer_size': 1024 * 64,  # Більший буфер для швидшого читання
+                'http_chunk_size': 1024 * 1024,  # 1MB chunks для швидшого завантаження
+                'throttled_rate': None,  # Без обмеження швидкості
                 'http_headers': {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 },
                 'extractor_args': {
                     'youtube': {
                         'player_client': ['android'],
-                        'player_skip': ['webpage'],
+                        'player_skip': ['webpage', 'configs'],  # Пропускаємо зайві запити
                     }
                 },
             }
