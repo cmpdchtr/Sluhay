@@ -83,7 +83,7 @@ async def cmd_start(message: Message):
 async def callback_search(callback: CallbackQuery):
     """Обробник кнопки Пошук"""
     await callback.message.edit_text(
-        "� <b>Виберіть тип пошуку:</b>",
+        "🔍 <b>Виберіть тип пошуку:</b>",
         parse_mode=ParseMode.HTML,
         reply_markup=get_search_menu_keyboard()
     )
@@ -96,18 +96,19 @@ async def callback_back_to_main(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     user_name = callback.from_user.first_name or "друже"
     
-    # Прибираємо Reply клавіатуру
-    await callback.message.answer(
-        f"👋 Привіт, {user_name}! Що будемо слухати сьогодні?",
-        reply_markup=ReplyKeyboardRemove()
-    )
+    # Спробуємо редагувати повідомлення
+    try:
+        await callback.message.edit_text(
+            f"👋 Привіт, {user_name}! Що будемо слухати сьогодні?",
+            reply_markup=get_main_menu_keyboard()
+        )
+    except:
+        # Якщо не вийшло - відправляємо нове
+        await callback.message.answer(
+            f"👋 Привіт, {user_name}! Що будемо слухати сьогодні?",
+            reply_markup=get_main_menu_keyboard()
+        )
     
-    # Відправляємо нове повідомлення з головним меню
-    await callback.message.answer(
-        "🎵 <b>Головне меню:</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=get_main_menu_keyboard()
-    )
     await callback.answer()
 
 
@@ -431,8 +432,9 @@ async def process_track_search(message: Message, state: FSMContext):
     """Обробка пошуку треку після натискання кнопки"""
     user_input = message.text.strip()
     
-    # Прибираємо Reply клавіатуру
-    status_msg = await message.answer("🔍 Аналізую запит...", reply_markup=ReplyKeyboardRemove())
+    # Прибираємо Reply клавіатуру та відправляємо статус
+    await message.answer("🔍 Аналізую запит...", reply_markup=ReplyKeyboardRemove())
+    status_msg = await message.answer("⏳ Шукаю трек...")
     
     try:
         # Визначаємо тип введення
@@ -442,7 +444,7 @@ async def process_track_search(message: Message, state: FSMContext):
             await handle_track(message, status_msg, user_input, is_search=True)
     except Exception as e:
         logger.error(f"Помилка при пошуку треку: {e}")
-        await status_msg.edit_text("❌ Виникла помилка. Спробуй ще раз.")
+        await message.answer("❌ Виникла помилка. Спробуй ще раз.")
     finally:
         await state.clear()
 
@@ -452,8 +454,9 @@ async def process_album_search(message: Message, state: FSMContext):
     """Обробка пошуку альбому після натискання кнопки"""
     user_input = message.text.strip()
     
-    # Прибираємо Reply клавіатуру
-    status_msg = await message.answer("🔍 Аналізую запит...", reply_markup=ReplyKeyboardRemove())
+    # Прибираємо Reply клавіатуру та відправляємо статус
+    await message.answer("🔍 Аналізую запит...", reply_markup=ReplyKeyboardRemove())
+    status_msg = await message.answer("⏳ Шукаю альбом...")
     
     try:
         # Визначаємо тип введення
@@ -463,7 +466,7 @@ async def process_album_search(message: Message, state: FSMContext):
             await handle_album(message, status_msg, user_input, is_search=True)
     except Exception as e:
         logger.error(f"Помилка при пошуку альбому: {e}")
-        await status_msg.edit_text("❌ Виникла помилка. Спробуй ще раз.")
+        await message.answer("❌ Виникла помилка. Спробуй ще раз.")
     finally:
         await state.clear()
 
@@ -473,8 +476,9 @@ async def process_playlist_search(message: Message, state: FSMContext):
     """Обробка пошуку плейліста після натискання кнопки"""
     user_input = message.text.strip()
     
-    # Прибираємо Reply клавіатуру
-    status_msg = await message.answer("🔍 Аналізую запит...", reply_markup=ReplyKeyboardRemove())
+    # Прибираємо Reply клавіатуру та відправляємо статус
+    await message.answer("🔍 Аналізую запит...", reply_markup=ReplyKeyboardRemove())
+    status_msg = await message.answer("⏳ Шукаю плейліст...")
     
     try:
         # Визначаємо тип введення
@@ -484,7 +488,7 @@ async def process_playlist_search(message: Message, state: FSMContext):
             await handle_playlist(message, status_msg, user_input, is_search=True)
     except Exception as e:
         logger.error(f"Помилка при пошуку плейліста: {e}")
-        await status_msg.edit_text("❌ Виникла помилка. Спробуй ще раз.")
+        await message.answer("❌ Виникла помилка. Спробуй ще раз.")
     finally:
         await state.clear()
 
@@ -657,6 +661,12 @@ async def handle_track(message: Message, status_msg: Message, user_input: str, i
         # Видаляємо файл після відправки
         soundcloud.cleanup_file(audio_path)
         
+        # Показуємо меню
+        await message.answer(
+            "✅ Трек відправлено!\n\n🎵 Що далі?",
+            reply_markup=get_main_menu_keyboard()
+        )
+        
         logger.info(f"Успішно відправлено: {track_info['name']}")
         
     except Exception as e:
@@ -795,7 +805,21 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
                     ))
                 
                 # Відправляємо групу
-                await message.answer_media_group(media=media_group)
+                try:
+                    await message.answer_media_group(media=media_group)
+                except Exception as e:
+                    logger.warning(f"Помилка при відправці медіа-групи плейлиста: {e}")
+                    # Якщо не вдалося відправити групою, відправляємо по одному
+                    for file_info in batch:
+                        try:
+                            audio_file = FSInputFile(file_info['path'])
+                            await message.answer_audio(
+                                audio=audio_file,
+                                title=file_info['title'],
+                                performer=file_info['performer']
+                            )
+                        except Exception as e2:
+                            logger.error(f"Помилка при відправці файлу {file_info['title']}: {e2}")
                 
                 # Видаляємо файли після відправки
                 for file_info in batch:
@@ -803,6 +827,12 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
             
             # Видаляємо статусне повідомлення
             await status_msg.delete()
+            
+            # Показуємо меню
+            await message.answer(
+                f"✅ Плейліст відправлено! ({len(downloaded_files)} треків)\n\n🎵 Що далі?",
+                reply_markup=get_main_menu_keyboard()
+            )
         else:
             await status_msg.edit_text(
                 "❌ Не вдалося завантажити жодного треку з плейлиста.",
@@ -947,7 +977,21 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
                     ))
                 
                 # Відправляємо групу
-                await message.answer_media_group(media=media_group)
+                try:
+                    await message.answer_media_group(media=media_group)
+                except Exception as e:
+                    logger.warning(f"Помилка при відправці медіа-групи альбому: {e}")
+                    # Якщо не вдалося відправити групою, відправляємо по одному
+                    for file_info in batch:
+                        try:
+                            audio_file = FSInputFile(file_info['path'])
+                            await message.answer_audio(
+                                audio=audio_file,
+                                title=file_info['title'],
+                                performer=file_info['performer']
+                            )
+                        except Exception as e2:
+                            logger.error(f"Помилка при відправці файлу {file_info['title']}: {e2}")
                 
                 # Видаляємо файли після відправки
                 for file_info in batch:
@@ -955,6 +999,12 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
             
             # Видаляємо статусне повідомлення
             await status_msg.delete()
+            
+            # Показуємо меню
+            await message.answer(
+                f"✅ Альбом відправлено! ({len(downloaded_files)} треків)\n\n🎵 Що далі?",
+                reply_markup=get_main_menu_keyboard()
+            )
         else:
             await status_msg.edit_text(
                 "❌ Не вдалося завантажити жодного треку з альбому.",
