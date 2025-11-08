@@ -3,9 +3,12 @@ import logging
 import aiohttp
 import os
 from aiogram import Bot, Dispatcher, F, types
-from aiogram.filters import Command
-from aiogram.types import Message, FSInputFile, BufferedInputFile, InputMediaAudio
+from aiogram.filters import Command, CommandStart
+from aiogram.types import Message, FSInputFile, BufferedInputFile, InputMediaAudio, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.enums import ParseMode
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
 
 import config
 from spotify_service import SpotifyService
@@ -19,34 +22,163 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Ініціалізація бота
+# Ініціалізація бота з FSM storage
+storage = MemoryStorage()
 bot = Bot(token=config.TELEGRAM_BOT_TOKEN)
-dp = Dispatcher()
+dp = Dispatcher(storage=storage)
 
 # Ініціалізація сервісів
 spotify = SpotifyService()
 soundcloud = SoundCloudDownloader()
 
 
-@dp.message(Command("start"))
+# FSM States для пошуку
+class SearchStates(StatesGroup):
+    waiting_for_track = State()
+    waiting_for_album = State()
+    waiting_for_playlist = State()
+
+
+def get_main_menu_keyboard():
+    """Головне меню з кнопками"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🔍", callback_data="search"),
+            InlineKeyboardButton(text="🔥", callback_data="top50"),
+            InlineKeyboardButton(text="⭐", callback_data="favorites")
+        ],
+        [
+            InlineKeyboardButton(text="⚙️ Налаштуванки", callback_data="settings"),
+            InlineKeyboardButton(text="👤 Профіль", callback_data="profile")
+        ]
+    ])
+    return keyboard
+
+
+def get_search_menu_keyboard():
+    """Меню пошуку"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎵 Пошук Треку", callback_data="search_track")],
+        [InlineKeyboardButton(text="💿 Пошук Альбому", callback_data="search_album")],
+        [InlineKeyboardButton(text="📋 Пошук Плейліста", callback_data="search_playlist")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
+    ])
+    return keyboard
+
+
+@dp.message(CommandStart())
 async def cmd_start(message: Message):
     """Обробник команди /start"""
-    welcome_text = (
-        "👋 Привіт! Я <b>Sluhay</b> — бот для завантаження музики!\n\n"
-        "🎵 <b>Як мною користуватись:</b>\n"
-        "1. Надішли мені посилання на трек зі Spotify\n"
-        "2. Або напиши назву пісні та виконавця\n\n"
-        "📥 Я знайду трек і завантажу його для тебе!\n\n"
-        "💡 <b>Приклади:</b>\n"
-        "• https://open.spotify.com/track/...\n"
-        "• МУР - Не побачу того дня\n"
-        "• The Weeknd - Blinding Lights\n\n"
-        "❓ Команди:\n"
-        "/start - Почати роботу з ботом\n"
-        "/help - Допомога\n"
-        "/test - Тестування функціоналу"
+    user_name = message.from_user.first_name or "друже"
+    welcome_text = f"👋 Привіт, {user_name}! Що будемо слухати сьогодні?"
+    
+    await message.answer(
+        welcome_text,
+        reply_markup=get_main_menu_keyboard()
     )
-    await message.answer(welcome_text, parse_mode=ParseMode.HTML)
+
+
+# Callback handlers
+@dp.callback_query(F.data == "search")
+async def callback_search(callback: CallbackQuery):
+    """Обробник кнопки Пошук"""
+    await callback.message.edit_text(
+        "� <b>Виберіть тип пошуку:</b>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_search_menu_keyboard()
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "back_to_main")
+async def callback_back_to_main(callback: CallbackQuery, state: FSMContext):
+    """Повернення до головного меню"""
+    await state.clear()
+    user_name = callback.from_user.first_name or "друже"
+    await callback.message.edit_text(
+        f"👋 Привіт, {user_name}! Що будемо слухати сьогодні?",
+        reply_markup=get_main_menu_keyboard()
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "search_track")
+async def callback_search_track(callback: CallbackQuery, state: FSMContext):
+    """Початок пошуку треку"""
+    await state.set_state(SearchStates.waiting_for_track)
+    await callback.message.edit_text(
+        "🎵 <b>Пошук треку</b>\n\n"
+        "Надішли мені:\n"
+        "• Посилання на Spotify: <code>https://open.spotify.com/track/...</code>\n"
+        "• Або назву: <code>Виконавець - Назва пісні</code>\n\n"
+        "💡 Приклад: <code>The Weeknd - Blinding Lights</code>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="search")]
+        ])
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "search_album")
+async def callback_search_album(callback: CallbackQuery, state: FSMContext):
+    """Початок пошуку альбому"""
+    await state.set_state(SearchStates.waiting_for_album)
+    await callback.message.edit_text(
+        "� <b>Пошук альбому</b>\n\n"
+        "Надішли мені:\n"
+        "• Посилання на Spotify: <code>https://open.spotify.com/album/...</code>\n"
+        "• Або назву: <code>Виконавець - Назва альбому</code>\n\n"
+        "💡 Приклад: <code>Pink Floyd - The Dark Side of the Moon</code>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="search")]
+        ])
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "search_playlist")
+async def callback_search_playlist(callback: CallbackQuery, state: FSMContext):
+    """Початок пошуку плейліста"""
+    await state.set_state(SearchStates.waiting_for_playlist)
+    await callback.message.edit_text(
+        "📋 <b>Пошук плейліста</b>\n\n"
+        "Надішли мені:\n"
+        "• Посилання на Spotify: <code>https://open.spotify.com/playlist/...</code>\n"
+        "• Або назву плейліста\n\n"
+        "💡 Приклад: <code>Today's Top Hits</code>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="search")]
+        ])
+    )
+    await callback.answer()
+
+
+# Заглушки для інших кнопок
+@dp.callback_query(F.data == "top50")
+async def callback_top50(callback: CallbackQuery):
+    """ТОП-50 (поки заглушка)"""
+    await callback.answer("🔥 ТОП-50 - скоро буде доступно!", show_alert=True)
+
+
+@dp.callback_query(F.data == "favorites")
+async def callback_favorites(callback: CallbackQuery):
+    """Збережені (поки заглушка)"""
+    await callback.answer("⭐ Збережені треки - скоро буде доступно!", show_alert=True)
+
+
+@dp.callback_query(F.data == "settings")
+async def callback_settings(callback: CallbackQuery):
+    """Налаштування (поки заглушка)"""
+    await callback.answer("⚙️ Налаштування - скоро буде доступно!", show_alert=True)
+
+
+@dp.callback_query(F.data == "profile")
+async def callback_profile(callback: CallbackQuery):
+    """Профіль (поки заглушка)"""
+    await callback.answer("👤 Профіль - скоро буде доступно!", show_alert=True)
 
 
 @dp.message(Command("help"))
@@ -54,25 +186,24 @@ async def cmd_help(message: Message):
     """Обробник команди /help"""
     help_text = (
         "ℹ️ <b>Довідка по боту Sluhay</b>\n\n"
-        "🎵 <b>Способи завантаження:</b>\n\n"
-        "<b>1. За посиланням Spotify:</b>\n"
-        "Надішли мені посилання на:\n"
-        "• Трек: <code>https://open.spotify.com/track/...</code>\n"
-        "• Альбом: <code>https://open.spotify.com/album/...</code>\n"
-        "• Плейліст: <code>https://open.spotify.com/playlist/...</code>\n\n"
-        "<b>2. За назвою (текстовий пошук):</b>\n"
-        "• Трек: <code>Виконавець - Назва пісні</code>\n"
-        "• Альбом: <code>альбом: Виконавець - Назва альбому</code>\n"
-        "• Плейліст: <code>плейліст: Назва плейлиста</code>\n\n"
-        "⏱ Завантаження зазвичай займає 5-15 секунд.\n"
-        "📦 Для альбомів і плейлистів - до хвилини.\n\n"
-        "⚠️ <b>Важливо:</b>\n"
-        "• Якість аудіо: 128 kbps MP3 (оптимізовано для швидкості)\n"
-        "• Максимальний розмір файлу: 50 МБ\n"
-        "• Бот завантажує треки з 🟢 SoundCloud\n\n"
-        "🧪 <b>Тестування:</b>\n"
-        "Використай /test для швидкої перевірки функціоналу без завантаження файлів.\n\n"
-        "❓ Питання чи проблеми? Напиши в тех. підтримку - @cmpdchtr!"
+        "🎵 <b>Як користуватись:</b>\n\n"
+        "1️⃣ Натисни кнопку <b>🔍 Пошук</b> у головному меню\n"
+        "2️⃣ Вибери тип контенту (Трек / Альбом / Плейліст)\n"
+        "3️⃣ Надішли посилання Spotify або назву\n"
+        "4️⃣ Отримай музику! 🎶\n\n"
+        "📝 <b>Приклади запитів:</b>\n"
+        "• <code>The Weeknd - Blinding Lights</code>\n"
+        "• <code>https://open.spotify.com/track/...</code>\n"
+        "• <code>Pink Floyd - The Dark Side of the Moon</code>\n\n"
+        "⚙️ <b>Технічні деталі:</b>\n"
+        "• Якість: MP3 96 kbps\n"
+        "• Джерело: 🟢 SoundCloud\n"
+        "• Макс. розмір: 50 МБ\n\n"
+        "🚀 <b>Команди:</b>\n"
+        "/start - Головне меню\n"
+        "/help - Ця довідка\n"
+        "/test - Тестування\n\n"
+        "💬 Питання? Пиши @cmpdchtr"
     )
     await message.answer(help_text, parse_mode=ParseMode.HTML)
 
@@ -256,6 +387,63 @@ async def cmd_test(message: Message):
         )
 
 
+@dp.message(SearchStates.waiting_for_track)
+async def process_track_search(message: Message, state: FSMContext):
+    """Обробка пошуку треку після натискання кнопки"""
+    user_input = message.text.strip()
+    status_msg = await message.answer("🔍 Аналізую запит...")
+    
+    try:
+        # Визначаємо тип введення
+        if "spotify.com/track/" in user_input or "spotify:track:" in user_input:
+            await handle_track(message, status_msg, user_input, is_search=False)
+        else:
+            await handle_track(message, status_msg, user_input, is_search=True)
+    except Exception as e:
+        logger.error(f"Помилка при пошуку треку: {e}")
+        await status_msg.edit_text("❌ Виникла помилка. Спробуй ще раз.")
+    finally:
+        await state.clear()
+
+
+@dp.message(SearchStates.waiting_for_album)
+async def process_album_search(message: Message, state: FSMContext):
+    """Обробка пошуку альбому після натискання кнопки"""
+    user_input = message.text.strip()
+    status_msg = await message.answer("🔍 Аналізую запит...")
+    
+    try:
+        # Визначаємо тип введення
+        if "spotify.com/album/" in user_input or "spotify:album:" in user_input:
+            await handle_album(message, status_msg, user_input, is_search=False)
+        else:
+            await handle_album(message, status_msg, user_input, is_search=True)
+    except Exception as e:
+        logger.error(f"Помилка при пошуку альбому: {e}")
+        await status_msg.edit_text("❌ Виникла помилка. Спробуй ще раз.")
+    finally:
+        await state.clear()
+
+
+@dp.message(SearchStates.waiting_for_playlist)
+async def process_playlist_search(message: Message, state: FSMContext):
+    """Обробка пошуку плейліста після натискання кнопки"""
+    user_input = message.text.strip()
+    status_msg = await message.answer("🔍 Аналізую запит...")
+    
+    try:
+        # Визначаємо тип введення
+        if "spotify.com/playlist/" in user_input or "spotify:playlist:" in user_input:
+            await handle_playlist(message, status_msg, user_input, is_search=False)
+        else:
+            await handle_playlist(message, status_msg, user_input, is_search=True)
+    except Exception as e:
+        logger.error(f"Помилка при пошуку плейліста: {e}")
+        await status_msg.edit_text("❌ Виникла помилка. Спробуй ще раз.")
+    finally:
+        await state.clear()
+
+
 @dp.message(F.text)
 async def handle_message(message: Message):
     """Обробник текстових повідомлень"""
@@ -391,7 +579,7 @@ async def handle_track(message: Message, status_msg: Message, user_input: str, i
             f"💿 <b>Альбом:</b> {track_info['album']}\n"
             f"⏱ <b>Тривалість:</b> {duration_str}\n"
             f"📦 <b>Розмір:</b> {file_size_str}\n"
-            f"🎧 <b>Якість:</b> MP3 96 kbps\n"
+            f"🎧 <b>Якість:</b> MP3 128 kbps\n"
             f"📥 <b>Джерело:</b> 🟢 SoundCloud\n\n"
             f"<i>Завантажено ботом @Sluhayy_bot</i> 🎶"
         )
