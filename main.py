@@ -55,12 +55,16 @@ async def cmd_help(message: Message):
         "ℹ️ <b>Довідка по боту Sluhay</b>\n\n"
         "🎵 <b>Способи завантаження:</b>\n\n"
         "<b>1. За посиланням Spotify:</b>\n"
-        "Надішли мені посилання на трек, наприклад:\n"
-        "<code>https://open.spotify.com/track/...</code>\n\n"
-        "<b>2. За назвою:</b>\n"
-        "Просто напиши назву пісні та виконавця:\n"
-        "<code>Виконавець - Назва пісні</code>\n\n"
-        "⏱ Завантаження зазвичай займає 10-30 секунд.\n\n"
+        "Надішли мені посилання на:\n"
+        "• Трек: <code>https://open.spotify.com/track/...</code>\n"
+        "• Альбом: <code>https://open.spotify.com/album/...</code>\n"
+        "• Плейліст: <code>https://open.spotify.com/playlist/...</code>\n\n"
+        "<b>2. За назвою (текстовий пошук):</b>\n"
+        "• Трек: <code>Виконавець - Назва пісні</code>\n"
+        "• Альбом: <code>альбом: Виконавець - Назва альбому</code>\n"
+        "• Плейліст: <code>плейліст: Назва плейлиста</code>\n\n"
+        "⏱ Завантаження зазвичай займає 10-30 секунд.\n"
+        "📦 Для альбомів і плейлистів - кілька хвилин.\n\n"
         "⚠️ <b>Важливо:</b>\n"
         "• Якість аудіо: 192 kbps MP3\n"
         "• Максимальний розмір файлу: 50 МБ\n"
@@ -98,9 +102,23 @@ async def handle_message(message: Message):
                 )
                 return
         else:
-            # Пошук треку за текстовим запитом
-            await handle_track(message, status_msg, user_input, is_search=True)
-            return
+            # Перевіряємо префікси для текстового пошуку
+            lower_input = user_input.lower()
+            
+            if lower_input.startswith(("альбом:", "album:")):
+                # Пошук альбому
+                query = user_input.split(":", 1)[1].strip()
+                await handle_album(message, status_msg, query, is_search=True)
+                return
+            elif lower_input.startswith(("плейліст:", "playlist:", "плейлист:")):
+                # Пошук плейлиста
+                query = user_input.split(":", 1)[1].strip()
+                await handle_playlist(message, status_msg, query, is_search=True)
+                return
+            else:
+                # Пошук треку за текстовим запитом
+                await handle_track(message, status_msg, user_input, is_search=True)
+                return
             
     except Exception as e:
         logger.error(f"Помилка при обробці запиту: {e}")
@@ -233,11 +251,30 @@ async def handle_track(message: Message, status_msg: Message, user_input: str, i
         )
 
 
-async def handle_playlist(message: types.Message, status_msg: types.Message, user_input: str):
+async def handle_playlist(message: types.Message, status_msg: types.Message, user_input: str, is_search: bool = False):
     """Обробка плейлиста зі Spotify"""
     try:
+        playlist_url = user_input
+        
+        # Якщо це текстовий пошук, спочатку шукаємо плейліст
+        if is_search:
+            logger.info(f"Пошук плейлиста: {user_input}")
+            await status_msg.edit_text("🔍 Шукаю плейліст...")
+            
+            search_result = spotify.search_playlist(user_input)
+            if not search_result:
+                await status_msg.edit_text(
+                    "❌ Плейліст не знайдено.\n\n"
+                    "💡 Спробуй:\n"
+                    "• Інший запит\n"
+                    "• Пряме посилання на плейліст Spotify"
+                )
+                return
+            
+            playlist_url = search_result['url']
+        
         # Отримуємо інформацію про плейліст
-        playlist_info = spotify.get_playlist_info(user_input)
+        playlist_info = spotify.get_playlist_info(playlist_url)
         
         if not playlist_info:
             await status_msg.edit_text(
@@ -316,11 +353,30 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
         )
 
 
-async def handle_album(message: types.Message, status_msg: types.Message, user_input: str):
+async def handle_album(message: types.Message, status_msg: types.Message, user_input: str, is_search: bool = False):
     """Обробка альбому зі Spotify"""
     try:
+        album_url = user_input
+        
+        # Якщо це текстовий пошук, спочатку шукаємо альбом
+        if is_search:
+            logger.info(f"Пошук альбому: {user_input}")
+            await status_msg.edit_text("🔍 Шукаю альбом...")
+            
+            search_result = spotify.search_album(user_input)
+            if not search_result:
+                await status_msg.edit_text(
+                    "❌ Альбом не знайдено.\n\n"
+                    "💡 Спробуй:\n"
+                    "• Інший запит\n"
+                    "• Пряме посилання на альбом Spotify"
+                )
+                return
+            
+            album_url = search_result['url']
+        
         # Отримуємо інформацію про альбом
-        album_info = spotify.get_album_info(user_input)
+        album_info = spotify.get_album_info(album_url)
         
         if not album_info:
             await status_msg.edit_text(

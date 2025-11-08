@@ -155,6 +155,58 @@ class SpotifyService:
             print(f"Помилка при пошуку треку на Spotify: {e}")
             return None
     
+    def search_album(self, query: str) -> dict | None:
+        """
+        Пошук альбому на Spotify за запитом
+        
+        Args:
+            query: Пошуковий запит
+            
+        Returns:
+            Інформація про знайдений альбом (ID у форматі URL) або None
+        """
+        try:
+            results = self.spotify.search(q=query, type='album', limit=1)
+            
+            if not results['albums']['items']:
+                return None
+            
+            album = results['albums']['items'][0]
+            # Повертаємо URL альбому, щоб потім використати get_album_info
+            album_url = f"https://open.spotify.com/album/{album['id']}"
+            
+            return {'url': album_url}
+            
+        except Exception as e:
+            print(f"Помилка при пошуку альбому на Spotify: {e}")
+            return None
+    
+    def search_playlist(self, query: str) -> dict | None:
+        """
+        Пошук плейлиста на Spotify за запитом
+        
+        Args:
+            query: Пошуковий запит
+            
+        Returns:
+            Інформація про знайдений плейлист (ID у форматі URL) або None
+        """
+        try:
+            results = self.spotify.search(q=query, type='playlist', limit=1)
+            
+            if not results['playlists']['items']:
+                return None
+            
+            playlist = results['playlists']['items'][0]
+            # Повертаємо URL плейлиста, щоб потім використати get_playlist_info
+            playlist_url = f"https://open.spotify.com/playlist/{playlist['id']}"
+            
+            return {'url': playlist_url}
+            
+        except Exception as e:
+            print(f"Помилка при пошуку плейлиста на Spotify: {e}")
+            return None
+    
     def get_playlist_info(self, playlist_url: str) -> dict | None:
         """
         Отримує інформацію про плейлист зі Spotify
