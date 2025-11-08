@@ -13,13 +13,14 @@ class YouTubeDownloader:
         # Бот працює КРАЩЕ без них!
         self.cookies_file = None
     
-    def download_audio(self, search_query: str, track_name: str) -> str | None:
+    def download_audio(self, search_query: str, track_name: str, user_id: int = None) -> str | None:
         """
         Завантажує аудіо з YouTube за пошуковим запитом
         
         Args:
             search_query: Пошуковий запит (виконавець - назва)
             track_name: Назва треку для імені файлу
+            user_id: ID користувача для унікальності файлу (опціонально)
             
         Returns:
             Шлях до завантаженого файлу або None
@@ -33,6 +34,11 @@ class YouTubeDownloader:
             if not safe_filename:
                 import time
                 safe_filename = f"track_{int(time.time())}"
+            
+            # Додаємо user_id та timestamp для унікальності
+            import time
+            unique_id = f"{user_id}_{int(time.time() * 1000)}" if user_id else f"{int(time.time() * 1000)}"
+            safe_filename = f"{safe_filename}_{unique_id}"
             
             output_path = os.path.join(self.download_dir, f"{safe_filename}.mp3")
             

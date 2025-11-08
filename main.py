@@ -352,7 +352,8 @@ async def handle_track(message: Message, status_msg: Message, user_input: str, i
         logger.info(f"Завантаження: {track_info['search_query']}")
         audio_path = youtube.download_audio(
             track_info['search_query'],
-            f"{track_info['artists']} - {track_info['name']}"
+            f"{track_info['artists']} - {track_info['name']}",
+            message.from_user.id
         )
         
         if not audio_path:
@@ -495,7 +496,8 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
                 # Завантажуємо аудіо з YouTube
                 audio_path = youtube.download_audio(
                     track_info['search_query'],
-                    f"{track_info['artists']} - {track_info['name']}"
+                    f"{track_info['artists']} - {track_info['name']}",
+                    message.from_user.id
                 )
                 
                 if audio_path:
@@ -656,7 +658,8 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
                 # Завантажуємо аудіо з YouTube
                 audio_path = youtube.download_audio(
                     track_info['search_query'],
-                    f"{track_info['artists']} - {track_info['name']}"
+                    f"{track_info['artists']} - {track_info['name']}",
+                    message.from_user.id
                 )
                 
                 if audio_path:
