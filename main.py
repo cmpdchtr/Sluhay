@@ -95,8 +95,17 @@ async def callback_back_to_main(callback: CallbackQuery, state: FSMContext):
     """Повернення до головного меню"""
     await state.clear()
     user_name = callback.from_user.first_name or "друже"
-    await callback.message.edit_text(
+    
+    # Прибираємо Reply клавіатуру
+    await callback.message.answer(
         f"👋 Привіт, {user_name}! Що будемо слухати сьогодні?",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    
+    # Відправляємо нове повідомлення з головним меню
+    await callback.message.answer(
+        "🎵 <b>Головне меню:</b>",
+        parse_mode=ParseMode.HTML,
         reply_markup=get_main_menu_keyboard()
     )
     await callback.answer()
