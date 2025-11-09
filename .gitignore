@@ -157,6 +157,9 @@ cookies.txt
 bot.log
 *.log
 
+# User settings and data
+user_settings.json
+
 # Spyder project settings
 .spyderproject
 .spyproject

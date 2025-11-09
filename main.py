@@ -2,6 +2,8 @@ import asyncio
 import logging
 import aiohttp
 import os
+import hashlib
+import json
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message, FSInputFile, BufferedInputFile, InputMediaAudio, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
@@ -31,21 +33,116 @@ dp = Dispatcher(storage=storage)
 spotify = SpotifyService()
 soundcloud = SoundCloudDownloader()
 
-# Налаштування користувачів (в продакшені використовувати БД)
+# Файл для збереження налаштувань
+SETTINGS_FILE = "user_settings.json"
+
+# Налаштування користувачів
 user_settings = {}
+
+def load_user_settings():
+    """Завантажити налаштування користувачів з файлу"""
+    global user_settings
+    try:
+        if os.path.exists(SETTINGS_FILE):
+            with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                # Конвертуємо ключі назад в int
+                loaded = json.load(f)
+                user_settings = {int(k): v for k, v in loaded.items()}
+                logger.info(f"Завантажено налаштування для {len(user_settings)} користувачів")
+        else:
+            user_settings = {}
+            logger.info("Файл налаштувань не знайдено, створено новий")
+    except Exception as e:
+        logger.error(f"Помилка при завантаженні налаштувань: {e}")
+        user_settings = {}
+
+def save_user_settings():
+    """Зберегти налаштування користувачів у файл"""
+    try:
+        # Конвертуємо ключі в string для JSON
+        to_save = {str(k): v for k, v in user_settings.items()}
+        with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(to_save, f, ensure_ascii=False, indent=2)
+        logger.info(f"Збережено налаштування для {len(user_settings)} користувачів")
+    except Exception as e:
+        logger.error(f"Помилка при збереженні налаштувань: {e}")
+
+def get_user_settings(user_id: int) -> dict:
+    """Отримати налаштування користувача"""
+    if user_id not in user_settings:
+        user_settings[user_id] = {
+            'bitrate': 128,  # За замовчуванням 128 kbps
+            'favorites': {
+                'tracks': [],      # [{'name': str, 'artist': str, 'url': str, 'saved_at': str}]
+                'albums': [],      # [{'name': str, 'artist': str, 'url': str, 'saved_at': str}]
+                'playlists': []    # [{'name': str, 'owner': str, 'url': str, 'saved_at': str}]
+            }
+        }
+        save_user_settings()  # Зберігаємо після створення
+    return user_settings[user_id]
 
 def get_user_bitrate(user_id: int) -> int:
     """Отримати бітрейт користувача"""
-    if user_id not in user_settings:
-        user_settings[user_id] = {'bitrate': 128}  # За замовчуванням 128 kbps
-    return user_settings[user_id]['bitrate']
+    settings = get_user_settings(user_id)
+    return settings['bitrate']
 
 def set_user_bitrate(user_id: int, bitrate: int):
     """Встановити бітрейт користувача"""
-    if user_id not in user_settings:
-        user_settings[user_id] = {}
-    user_settings[user_id]['bitrate'] = bitrate
+    settings = get_user_settings(user_id)
+    settings['bitrate'] = bitrate
+    save_user_settings()  # Зберігаємо після зміни
     logger.info(f"Користувач {user_id} встановив бітрейт: {bitrate} kbps")
+
+def add_to_favorites(user_id: int, item_type: str, item_data: dict):
+    """Додати до збережених"""
+    from datetime import datetime
+    
+    settings = get_user_settings(user_id)
+    item_data['saved_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    if item_type == 'track':
+        # Перевірка чи вже збережено
+        if not any(t['url'] == item_data['url'] for t in settings['favorites']['tracks']):
+            settings['favorites']['tracks'].append(item_data)
+            save_user_settings()  # Зберігаємо після додавання
+            logger.info(f"Користувач {user_id} зберіг трек: {item_data['name']}")
+            return True
+    elif item_type == 'album':
+        if not any(a['url'] == item_data['url'] for a in settings['favorites']['albums']):
+            settings['favorites']['albums'].append(item_data)
+            save_user_settings()  # Зберігаємо після додавання
+            logger.info(f"Користувач {user_id} зберіг альбом: {item_data['name']}")
+            return True
+    elif item_type == 'playlist':
+        if not any(p['url'] == item_data['url'] for p in settings['favorites']['playlists']):
+            settings['favorites']['playlists'].append(item_data)
+            save_user_settings()  # Зберігаємо після додавання
+            logger.info(f"Користувач {user_id} зберіг плейліст: {item_data['name']}")
+            return True
+    
+    return False  # Вже було збережено
+
+def remove_from_favorites(user_id: int, item_type: str, item_url: str):
+    """Видалити зі збережених"""
+    settings = get_user_settings(user_id)
+    
+    if item_type == 'track':
+        settings['favorites']['tracks'] = [t for t in settings['favorites']['tracks'] if t['url'] != item_url]
+    elif item_type == 'album':
+        settings['favorites']['albums'] = [a for a in settings['favorites']['albums'] if a['url'] != item_url]
+    elif item_type == 'playlist':
+        settings['favorites']['playlists'] = [p for p in settings['favorites']['playlists'] if p['url'] != item_url]
+    
+    save_user_settings()  # Зберігаємо після видалення
+    logger.info(f"Користувач {user_id} видалив {item_type} зі збережених")
+
+def get_favorites(user_id: int, item_type: str = None) -> dict:
+    """Отримати збережені"""
+    settings = get_user_settings(user_id)
+    
+    if item_type:
+        return settings['favorites'].get(f"{item_type}s", [])
+    return settings['favorites']
 
 
 # FSM States для пошуку
@@ -226,12 +323,6 @@ async def callback_top50(callback: CallbackQuery):
     await callback.answer("🔥 ТОП-50 - скоро буде доступно!", show_alert=True)
 
 
-@dp.callback_query(F.data == "favorites")
-async def callback_favorites(callback: CallbackQuery):
-    """Збережені (поки заглушка)"""
-    await callback.answer("⭐ Збережені треки - скоро буде доступно!", show_alert=True)
-
-
 @dp.callback_query(F.data == "settings")
 async def callback_settings(callback: CallbackQuery):
     """Налаштування"""
@@ -372,6 +463,145 @@ async def callback_profile(callback: CallbackQuery):
     await callback.answer("👤 Профіль - скоро буде доступно!", show_alert=True)
 
 
+@dp.callback_query(F.data == "favorites")
+async def callback_favorites(callback: CallbackQuery):
+    """Показати збережені"""
+    user_id = callback.from_user.id
+    favorites = get_favorites(user_id)
+    
+    tracks_count = len(favorites['tracks'])
+    albums_count = len(favorites['albums'])
+    playlists_count = len(favorites['playlists'])
+    
+    total = tracks_count + albums_count + playlists_count
+    
+    if total == 0:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
+        ])
+        await callback.message.edit_text(
+            "⭐ <b>Збережені</b>\n\n"
+            "📭 У вас поки немає збережених треків, альбомів або плейлістів.\n\n"
+            "💡 Щоб зберегти, завантажте трек/альбом/плейліст і натисніть <b>⭐ Зберегти</b>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboard
+        )
+    else:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"🎵 Треки ({tracks_count})", callback_data="fav_tracks")],
+            [InlineKeyboardButton(text=f"💿 Альбоми ({albums_count})", callback_data="fav_albums")],
+            [InlineKeyboardButton(text=f"📀 Плейлісти ({playlists_count})", callback_data="fav_playlists")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
+        ])
+        await callback.message.edit_text(
+            f"⭐ <b>Збережені</b>\n\n"
+            f"📊 Всього збережено: {total}\n\n"
+            f"🎵 Треки: {tracks_count}\n"
+            f"💿 Альбоми: {albums_count}\n"
+            f"📀 Плейлісти: {playlists_count}",
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboard
+        )
+    
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("fav_"))
+async def callback_favorites_category(callback: CallbackQuery):
+    """Показати категорію збережених"""
+    user_id = callback.from_user.id
+    category = callback.data.split("_")[1]  # tracks, albums, playlists
+    
+    if category == "tracks":
+        items = get_favorites(user_id, 'track')
+        title = "🎵 Збережені треки"
+        emoji = "🎵"
+    elif category == "albums":
+        items = get_favorites(user_id, 'album')
+        title = "💿 Збережені альбоми"
+        emoji = "💿"
+    else:  # playlists
+        items = get_favorites(user_id, 'playlist')
+        title = "📀 Збережені плейлісти"
+        emoji = "📀"
+    
+    if not items:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="favorites")]
+        ])
+        await callback.message.edit_text(
+            f"{title}\n\n"
+            f"📭 Порожньо",
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboard
+        )
+        await callback.answer()
+        return
+    
+    # Формуємо список
+    text = f"{title}\n\n"
+    keyboard_buttons = []
+    
+    for idx, item in enumerate(items[:10], 1):  # Показуємо перші 10
+        if category == "tracks":
+            name = f"{item['artist']} - {item['name']}"
+        elif category == "albums":
+            name = f"{item['artist']} - {item['name']}"
+        else:  # playlists
+            name = f"{item['name']} by {item['owner']}"
+        
+        text += f"{idx}. {emoji} {name}\n"
+        keyboard_buttons.append([
+            InlineKeyboardButton(
+                text=f"{idx}. {name[:30]}...",
+                callback_data=f"load_fav_{category[:-1]}_{idx-1}"
+            )
+        ])
+    
+    if len(items) > 10:
+        text += f"\n📊 Показано 10 з {len(items)}"
+    
+    keyboard_buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="favorites")])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+    
+    await callback.message.edit_text(
+        text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("load_fav_"))
+async def callback_load_favorite(callback: CallbackQuery, state: FSMContext):
+    """Завантажити збережений трек/альбом/плейліст"""
+    parts = callback.data.split("_")
+    item_type = parts[2]  # track, album, playlist
+    item_index = int(parts[3])
+    
+    user_id = callback.from_user.id
+    items = get_favorites(user_id, item_type)
+    
+    if item_index >= len(items):
+        await callback.answer("❌ Елемент не знайдено", show_alert=True)
+        return
+    
+    item = items[item_index]
+    url = item['url']
+    
+    await callback.answer("⏳ Завантажую...", show_alert=False)
+    
+    status_msg = await callback.message.answer("⏳ Завантаження...")
+    
+    # Викликаємо відповідний handler
+    if item_type == "track":
+        await handle_track(callback.message, status_msg, url, state, is_search=False)
+    elif item_type == "album":
+        await handle_album(callback.message, status_msg, url, state, is_search=False)
+    else:  # playlist
+        await handle_playlist(callback.message, status_msg, url, state, is_search=False)
+
+
 # Обробник кнопки "Скасувати"
 @dp.message(F.text == "❌ Скасувати")
 async def cancel_search(message: Message, state: FSMContext):
@@ -400,6 +630,50 @@ async def cancel_search(message: Message, state: FSMContext):
         "Вибери опцію:",
         reply_markup=get_main_menu_keyboard()
     )
+
+
+@dp.callback_query(F.data.startswith("save_"))
+async def callback_save_item(callback: CallbackQuery):
+    """Збереження треку/альбому/плейліста"""
+    parts = callback.data.split("_")
+    item_type = parts[1]  # track, album, playlist
+    item_id = "_".join(parts[2:])  # ID може містити _
+    
+    user_id = callback.from_user.id
+    settings = get_user_settings(user_id)
+    
+    # Перевіряємо чи є тимчасові дані
+    if 'temp_items' not in settings or item_id not in settings['temp_items']:
+        await callback.answer("❌ Дані не знайдені. Спробуй завантажити ще раз.", show_alert=True)
+        return
+    
+    item_data = settings['temp_items'][item_id]
+    
+    # Додаємо до збережених
+    success = add_to_favorites(user_id, item_type, item_data)
+    
+    if success:
+        await callback.answer("⭐ Збережено!", show_alert=True)
+        
+        # Оновлюємо кнопку
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="✅ Збережено",
+                callback_data="already_saved"
+            )],
+            [InlineKeyboardButton(text="🔙 Головне меню", callback_data="back_to_main")]
+        ])
+        
+        await callback.message.edit_reply_markup(reply_markup=keyboard)
+    else:
+        await callback.answer("ℹ️ Вже збережено раніше", show_alert=True)
+
+
+@dp.callback_query(F.data == "already_saved")
+async def callback_already_saved(callback: CallbackQuery):
+    """Повідомлення що вже збережено"""
+    await callback.answer("✅ Цей елемент вже в збережених!", show_alert=True)
+
 
 
 @dp.message(Command("help"))
@@ -844,10 +1118,34 @@ async def handle_track(message: Message, status_msg: Message, user_input: str, i
         # Видаляємо файл після відправки
         soundcloud.cleanup_file(audio_path)
         
-        # Показуємо меню
+        # Генеруємо унікальний ID для треку (хеш від назви + виконавця)
+        track_id = hashlib.md5(f"{track_info['artists']}_{track_info['name']}".encode()).hexdigest()[:16]
+        
+        # Кнопка збереження
+        save_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="⭐ Зберегти трек",
+                callback_data=f"save_track_{track_id}"
+            )],
+            [InlineKeyboardButton(text="🔙 Головне меню", callback_data="back_to_main")]
+        ])
+        
+        # Зберігаємо інформацію про трек для можливості збереження
+        settings = get_user_settings(message.from_user.id)
+        if 'temp_items' not in settings:
+            settings['temp_items'] = {}
+        
+        settings['temp_items'][track_id] = {
+            'type': 'track',
+            'name': track_info['name'],
+            'artist': track_info['artists'],
+            'url': user_input if not is_search else track_info.get('spotify_url', user_input)
+        }
+        
+        # Показуємо меню з кнопкою збереження
         await message.answer(
-            "✅ Трек відправлено!\n\n🎵 Що далі?",
-            reply_markup=get_main_menu_keyboard()
+            "✅ Трек відправлено!\n\n🎵 Бажаєш зберегти цей трек?",
+            reply_markup=save_keyboard
         )
         
         logger.info(f"Успішно відправлено: {track_info['name']}")
@@ -1043,14 +1341,38 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
             # Видаляємо статусне повідомлення
             await status_msg.delete()
             
+            # Генеруємо унікальний ID для плейліста
+            playlist_id = hashlib.md5(f"{playlist_info['owner']}_{playlist_info['name']}".encode()).hexdigest()[:16]
+            
+            # Кнопка збереження плейліста
+            save_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="⭐ Зберегти плейліст",
+                    callback_data=f"save_playlist_{playlist_id}"
+                )],
+                [InlineKeyboardButton(text="🔙 Головне меню", callback_data="back_to_main")]
+            ])
+            
+            # Зберігаємо інформацію про плейліст
+            settings = get_user_settings(message.from_user.id)
+            if 'temp_items' not in settings:
+                settings['temp_items'] = {}
+            
+            settings['temp_items'][playlist_id] = {
+                'type': 'playlist',
+                'name': playlist_info['name'],
+                'owner': playlist_info['owner'],
+                'url': user_input
+            }
+            
             # Показуємо меню (прибираємо Reply клавіатуру)
             await message.answer(
-                f"✅ Плейліст відправлено! ({len(downloaded_files)} треків)\n\n🎵 Що далі?",
+                f"✅ Плейліст відправлено! ({len(downloaded_files)} треків)\n\n📀 Бажаєш зберегти цей плейліст?",
                 reply_markup=ReplyKeyboardRemove()
             )
             await message.answer(
                 "Вибери опцію:",
-                reply_markup=get_main_menu_keyboard()
+                reply_markup=save_keyboard
             )
         else:
             await status_msg.edit_text(
@@ -1251,14 +1573,38 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
             # Видаляємо статусне повідомлення
             await status_msg.delete()
             
+            # Генеруємо унікальний ID для альбому
+            album_id = hashlib.md5(f"{album_info['artist']}_{album_info['name']}".encode()).hexdigest()[:16]
+            
+            # Кнопка збереження альбому
+            save_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="⭐ Зберегти альбом",
+                    callback_data=f"save_album_{album_id}"
+                )],
+                [InlineKeyboardButton(text="🔙 Головне меню", callback_data="back_to_main")]
+            ])
+            
+            # Зберігаємо інформацію про альбом
+            settings = get_user_settings(message.from_user.id)
+            if 'temp_items' not in settings:
+                settings['temp_items'] = {}
+            
+            settings['temp_items'][album_id] = {
+                'type': 'album',
+                'name': album_info['name'],
+                'artist': album_info['artist'],  # Використовуємо 'artist' (не 'artists')
+                'url': user_input
+            }
+            
             # Показуємо меню (прибираємо Reply клавіатуру)
             await message.answer(
-                f"✅ Альбом відправлено! ({len(downloaded_files)} треків)\n\n🎵 Що далі?",
+                f"✅ Альбом відправлено! ({len(downloaded_files)} треків)\n\n💿 Бажаєш зберегти цей альбом?",
                 reply_markup=ReplyKeyboardRemove()
             )
             await message.answer(
                 "Вибери опцію:",
-                reply_markup=get_main_menu_keyboard()
+                reply_markup=save_keyboard
             )
         else:
             await status_msg.edit_text(
@@ -1276,6 +1622,9 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
 
 async def main():
     """Головна функція запуску бота"""
+    # Завантажуємо налаштування користувачів
+    load_user_settings()
+    
     logger.info("Бот Sluhay запущено!")
     try:
         # Видаляємо старі оновлення та webhook
@@ -1292,6 +1641,8 @@ async def main():
             logger.error(f"Помилка при запуску бота: {e}")
         raise
     finally:
+        # Зберігаємо налаштування перед виходом
+        save_user_settings()
         await bot.session.close()
 
 

@@ -1,0 +1,35 @@
+{
+  "123456789": {
+    "bitrate": 192,
+    "favorites": {
+      "tracks": [
+        {
+          "type": "track",
+          "name": "Song Name",
+          "artist": "Artist Name",
+          "url": "https://open.spotify.com/track/...",
+          "saved_at": "2025-11-09 14:30:00"
+        }
+      ],
+      "albums": [
+        {
+          "type": "album",
+          "name": "Album Name",
+          "artist": "Artist Name",
+          "url": "https://open.spotify.com/album/...",
+          "saved_at": "2025-11-09 14:35:00"
+        }
+      ],
+      "playlists": [
+        {
+          "type": "playlist",
+          "name": "Playlist Name",
+          "owner": "Owner Name",
+          "url": "https://open.spotify.com/playlist/...",
+          "saved_at": "2025-11-09 14:40:00"
+        }
+      ]
+    },
+    "temp_items": {}
+  }
+}

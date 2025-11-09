@@ -238,6 +238,7 @@ class SpotifyService:
                     })
             
             playlist_info = {
+                'id': playlist['id'],
                 'name': playlist['name'],
                 'description': playlist.get('description', ''),
                 'owner': playlist['owner']['display_name'],
@@ -281,6 +282,7 @@ class SpotifyService:
                 })
             
             album_info = {
+                'id': album['id'],
                 'name': album['name'],
                 'artist': ", ".join([artist['name'] for artist in album['artists']]),
                 'release_date': album.get('release_date', ''),
