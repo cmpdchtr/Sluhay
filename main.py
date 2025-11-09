@@ -673,7 +673,10 @@ async def callback_profile(callback: CallbackQuery):
     # Кнопки
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🔙 Головне меню", callback_data="back_to_main")
+            InlineKeyboardButton(text="�️ Очистити дані", callback_data="clear_menu")
+        ],
+        [
+            InlineKeyboardButton(text="�🔙 Головне меню", callback_data="back_to_main")
         ]
     ])
     
@@ -683,6 +686,104 @@ async def callback_profile(callback: CallbackQuery):
         reply_markup=keyboard
     )
     await callback.answer()
+
+
+@dp.callback_query(F.data == "clear_menu")
+async def callback_clear_menu(callback: CallbackQuery):
+    """Меню очищення даних"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🎵 Очистити збережені треки", callback_data="clear_saved_tracks")
+        ],
+        [
+            InlineKeyboardButton(text="⭐ Очистити всі збережені", callback_data="clear_all_saved")
+        ],
+        [
+            InlineKeyboardButton(text="⚙️ Скинути налаштування", callback_data="reset_settings")
+        ],
+        [
+            InlineKeyboardButton(text="◀️ Назад", callback_data="profile")
+        ]
+    ])
+    
+    await callback.message.edit_text(
+        "🗑️ <b>ОЧИЩЕННЯ ДАНИХ</b>\n\n"
+        "Обери що хочеш очистити:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "clear_saved_tracks")
+async def callback_clear_saved_tracks(callback: CallbackQuery):
+    """Очистити збережені треки"""
+    user_id = callback.from_user.id
+    settings = get_user_settings(user_id)
+    
+    tracks_count = len(settings['favorites']['tracks'])
+    
+    if tracks_count == 0:
+        await callback.answer("❌ У тебе немає збережених треків!", show_alert=True)
+        return
+    
+    # Очищуємо тільки треки
+    settings['favorites']['tracks'] = []
+    save_user_settings()
+    
+    await callback.answer(f"✅ Видалено {tracks_count} треків!", show_alert=True)
+    
+    # Повертаємось до меню очищення
+    await callback_clear_menu(callback)
+
+
+@dp.callback_query(F.data == "clear_all_saved")
+async def callback_clear_all_saved(callback: CallbackQuery):
+    """Очистити всі збережені"""
+    user_id = callback.from_user.id
+    settings = get_user_settings(user_id)
+    
+    total = (len(settings['favorites']['tracks']) + 
+             len(settings['favorites']['albums']) + 
+             len(settings['favorites']['playlists']))
+    
+    if total == 0:
+        await callback.answer("❌ У тебе немає збережених елементів!", show_alert=True)
+        return
+    
+    # Очищуємо всі збережені
+    settings['favorites']['tracks'] = []
+    settings['favorites']['albums'] = []
+    settings['favorites']['playlists'] = []
+    save_user_settings()
+    
+    await callback.answer(f"✅ Видалено {total} елементів!", show_alert=True)
+    
+    # Повертаємось до меню очищення
+    await callback_clear_menu(callback)
+
+
+@dp.callback_query(F.data == "reset_settings")
+async def callback_reset_settings(callback: CallbackQuery):
+    """Скинути налаштування"""
+    user_id = callback.from_user.id
+    settings = get_user_settings(user_id)
+    
+    # Скидаємо тільки бітрейт та статистику (збережені залишаються!)
+    settings['bitrate'] = 128
+    settings['stats'] = {
+        'tracks_downloaded': 0,
+        'albums_downloaded': 0,
+        'playlists_downloaded': 0,
+        'total_duration_sec': 0,
+        'total_size_mb': 0.0
+    }
+    save_user_settings()
+    
+    await callback.answer("✅ Налаштування скинуто! Бітрейт: 128 kbps, статистика очищена.", show_alert=True)
+    
+    # Повертаємось до профілю
+    await callback_profile(callback)
 
 
 @dp.callback_query(F.data == "clear_stats")
