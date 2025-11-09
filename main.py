@@ -4,6 +4,7 @@ import aiohttp
 import os
 import hashlib
 import json
+import yt_dlp
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message, FSInputFile, BufferedInputFile, InputMediaAudio, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
@@ -186,6 +187,104 @@ def get_user_stats(user_id: int) -> dict:
     return settings['stats']
 
 
+async def get_youtube_playlist_tracks(playlist_url: str) -> list:
+    """Отримати треки з YouTube Music плейліста"""
+    try:
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': True,  # Не завантажувати, тільки отримати інфо
+            'force_generic_extractor': False,
+        }
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(playlist_url, download=False)
+            
+            if not info or 'entries' not in info:
+                return []
+            
+            tracks = []
+            for entry in info['entries']:
+                if entry:
+                    track_name = entry.get('title', 'Unknown Track')
+                    artist = entry.get('uploader', 'Unknown Artist')
+                    
+                    # Спробуємо витягти виконавця з назви
+                    if ' - ' in track_name:
+                        parts = track_name.split(' - ', 1)
+                        artist = parts[0].strip()
+                        track_name = parts[1].strip()
+                    
+                    tracks.append({
+                        'name': track_name,
+                        'artist': artist,
+                        'url': f"https://www.youtube.com/watch?v={entry.get('id', '')}"
+                    })
+            
+            return tracks
+            
+    except Exception as e:
+        logger.error(f"Помилка при парсингу YouTube Music: {e}")
+        return []
+
+
+async def get_soundcloud_playlist_tracks(playlist_url: str) -> list:
+    """Отримати треки з SoundCloud плейліста"""
+    try:
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': 'in_playlist',
+            'force_generic_extractor': False,
+            'ignoreerrors': True,
+        }
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(playlist_url, download=False)
+            
+            if not info:
+                logger.error("SoundCloud: info is None")
+                return []
+            
+            # Для SoundCloud може бути різна структура
+            entries = info.get('entries', [])
+            
+            # Якщо це окремий трек, а не плейліст
+            if not entries and info.get('title'):
+                tracks = [{
+                    'name': info.get('title', 'Unknown Track'),
+                    'artist': info.get('uploader', 'Unknown Artist'),
+                    'url': info.get('webpage_url', playlist_url)
+                }]
+                return tracks
+            
+            if not entries:
+                logger.error(f"SoundCloud: no entries found. Info keys: {info.keys()}")
+                return []
+            
+            tracks = []
+            for entry in entries:
+                if entry:
+                    track_name = entry.get('title', 'Unknown Track')
+                    artist = entry.get('uploader', entry.get('artist', 'Unknown Artist'))
+                    url = entry.get('webpage_url', entry.get('url', ''))
+                    
+                    tracks.append({
+                        'name': track_name,
+                        'artist': artist,
+                        'url': url
+                    })
+            
+            logger.info(f"SoundCloud: parsed {len(tracks)} tracks")
+            return tracks
+            
+    except Exception as e:
+        logger.error(f"Помилка при парсингу SoundCloud: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return []
+
+
 # FSM States для пошуку
 class SearchStates(StatesGroup):
     waiting_for_track = State()
@@ -193,6 +292,9 @@ class SearchStates(StatesGroup):
     waiting_for_playlist = State()
     downloading_album = State()
     downloading_playlist = State()
+    waiting_for_import_spotify = State()
+    waiting_for_import_youtube = State()
+    waiting_for_import_soundcloud = State()
 
 
 def get_main_menu_keyboard():
@@ -226,7 +328,8 @@ def get_settings_menu_keyboard():
     """Меню налаштувань"""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎧 Встановити бітрейт", callback_data="set_bitrate")],
-        [InlineKeyboardButton(text="🗑 Очистити історію чата", callback_data="clear_history")],
+        [InlineKeyboardButton(text="📥 Імпорт улюблених", callback_data="import_favorites")],
+        [InlineKeyboardButton(text="🗑️ Очистити історію чата", callback_data="clear_history")],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
     ])
     return keyboard
@@ -537,6 +640,93 @@ async def callback_bitrate_selected(callback: CallbackQuery):
         reply_markup=get_settings_menu_keyboard()
     )
     await callback.answer(f"✅ Бітрейт {bitrate} kbps встановлено!")
+
+
+@dp.callback_query(F.data == "import_favorites")
+async def callback_import_favorites(callback: CallbackQuery):
+    """Меню імпорту улюблених"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🟢 Spotify", callback_data="import_spotify")],
+        [InlineKeyboardButton(text="🔴 YouTube Music", callback_data="import_youtube")],
+        [InlineKeyboardButton(text="🟠 SoundCloud", callback_data="import_soundcloud")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="settings")]
+    ])
+    
+    await callback.message.edit_text(
+        "📥 <b>ІМПОРТ УЛЮБЛЕНИХ ТРЕКІВ</b>\n\n"
+        "Оберіть платформу з якої хочеш імпортувати:\n\n"
+        "💡 Треки будуть додані до збережених,\n"
+        "але не завантажені автоматично.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "import_spotify")
+async def callback_import_spotify(callback: CallbackQuery, state: FSMContext):
+    """Імпорт з Spotify"""
+    await callback.message.edit_text(
+        "🟢 <b>ІМПОРТ З SPOTIFY</b>\n\n"
+        "Надішли посилання на:\n"
+        "• 💚 Улюблені треки Spotify\n"
+        "• 📋 Плейліст зі збереженими треками\n\n"
+        "Формат: <code>https://open.spotify.com/playlist/...</code>\n\n"
+        "💡 Щоб отримати посилання на улюблені:\n"
+        "1. Відкрий Spotify\n"
+        "2. Перейди в 'Liked Songs'\n"
+        "3. Натисни '...' → 'Share' → 'Copy link'",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Скасувати", callback_data="import_favorites")]
+        ])
+    )
+    await state.set_state(SearchStates.waiting_for_import_spotify)
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "import_youtube")
+async def callback_import_youtube(callback: CallbackQuery, state: FSMContext):
+    """Імпорт з YouTube Music"""
+    await callback.message.edit_text(
+        "🔴 <b>ІМПОРТ З YOUTUBE MUSIC</b>\n\n"
+        "Надішли посилання на:\n"
+        "• 📋 Плейліст YouTube Music\n\n"
+        "Формат: <code>https://music.youtube.com/playlist?list=...</code>\n\n"
+        "💡 Щоб отримати посилання:\n"
+        "1. Відкрий YouTube Music\n"
+        "2. Перейди до плейлісту\n"
+        "3. Натисни 'Share' → 'Copy link'",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Скасувати", callback_data="import_favorites")]
+        ])
+    )
+    await state.set_state(SearchStates.waiting_for_import_youtube)
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "import_soundcloud")
+async def callback_import_soundcloud(callback: CallbackQuery, state: FSMContext):
+    """Імпорт з SoundCloud"""
+    await callback.message.edit_text(
+        "🟠 <b>ІМПОРТ З SOUNDCLOUD</b>\n\n"
+        "Надішли посилання на:\n"
+        "• 📋 Плейліст SoundCloud\n"
+        "• 💛 Улюблені треки (Likes)\n\n"
+        "Формат: <code>https://soundcloud.com/...</code>\n\n"
+        "💡 Щоб отримати посилання на Likes:\n"
+        "1. Відкрий SoundCloud\n"
+        "2. Перейди в свій профіль\n"
+        "3. Відкрий 'Likes'\n"
+        "4. Скопіюй URL з адресного рядка",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Скасувати", callback_data="import_favorites")]
+        ])
+    )
+    await state.set_state(SearchStates.waiting_for_import_soundcloud)
+    await callback.answer()
 
 
 @dp.callback_query(F.data == "clear_history")
@@ -1359,6 +1549,166 @@ async def process_playlist_search(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"Помилка при пошуку плейліста: {e}")
         await message.answer("❌ Виникла помилка. Спробуй ще раз.")
+    finally:
+        await state.clear()
+
+
+@dp.message(SearchStates.waiting_for_import_spotify)
+async def process_import_spotify(message: Message, state: FSMContext):
+    """Обробка імпорту з Spotify"""
+    user_input = message.text.strip()
+    
+    await message.answer("⏳ Імпортую треки з Spotify...", reply_markup=ReplyKeyboardRemove())
+    
+    try:
+        # Перевіряємо чи це плейліст Spotify
+        if not ("spotify.com/playlist/" in user_input or "spotify:playlist:" in user_input):
+            await message.answer("❌ Це не схоже на посилання Spotify плейліста.\n\nСпробуй ще раз або скасуй імпорт.")
+            await state.clear()
+            return
+        
+        # Отримуємо інформацію про плейліст
+        playlist_info = spotify.get_playlist_info(user_input)
+        
+        if not playlist_info:
+            await message.answer("❌ Не вдалося отримати інформацію про плейліст.\n\nПеревір посилання і спробуй ще раз.")
+            await state.clear()
+            return
+        
+        tracks = playlist_info.get('tracks', [])
+        
+        if not tracks:
+            await message.answer("❌ Плейліст порожній або не вдалося отримати треки.")
+            await state.clear()
+            return
+        
+        # Додаємо треки до збережених
+        user_id = message.from_user.id
+        imported_count = 0
+        
+        logger.info(f"Spotify import: processing {len(tracks)} tracks")
+        
+        for track_info in tracks:
+            track_data = {
+                'name': track_info['name'],
+                'artist': track_info['artists'],
+                'url': f"https://open.spotify.com/track/{track_info.get('id', '')}"
+            }
+            
+            logger.info(f"Trying to add track: {track_data['name']} by {track_data['artist']}")
+            
+            if add_to_favorites(user_id, 'track', track_data):
+                imported_count += 1
+                logger.info(f"Track added successfully, count: {imported_count}")
+            else:
+                logger.warning(f"Track NOT added: {track_data['name']}")
+        
+        await message.answer(
+            f"✅ <b>Імпорт завершено!</b>\n\n"
+            f"📥 Імпортовано: <b>{imported_count}</b> треків\n"
+            f"📋 З плейліста: <b>{playlist_info['name']}</b>\n\n"
+            f"💡 Треки додані до збережених.\n"
+            f"Переглянь їх у розділі ⭐ Збережені → 🎵 Треки",
+            parse_mode=ParseMode.HTML
+        )
+        
+    except Exception as e:
+        logger.error(f"Помилка при імпорті з Spotify: {e}")
+        await message.answer("❌ Виникла помилка при імпорті.\nСпробуй ще раз пізніше.")
+    finally:
+        await state.clear()
+
+
+@dp.message(SearchStates.waiting_for_import_youtube)
+async def process_import_youtube(message: Message, state: FSMContext):
+    """Обробка імпорту з YouTube Music"""
+    user_input = message.text.strip()
+    
+    await message.answer("⏳ Імпортую треки з YouTube Music...", reply_markup=ReplyKeyboardRemove())
+    
+    try:
+        # Парсимо плейлист
+        tracks = await get_youtube_playlist_tracks(user_input)
+        
+        if not tracks:
+            await message.answer(
+                "❌ <b>Не вдалося отримати треки з плейлиста</b>\n\n"
+                "Переконайся, що посилання правильне та плейлист доступний.",
+                parse_mode=ParseMode.HTML
+            )
+            await state.clear()
+            return
+        
+        # Додаємо треки до обраного
+        user_id = message.from_user.id
+        imported_count = 0
+        
+        for track in tracks:
+            track_data = {
+                'name': track['name'],
+                'artist': track['artist'],
+                'url': track['url']
+            }
+            if add_to_favorites(user_id, 'track', track_data):
+                imported_count += 1
+        
+        await message.answer(
+            f"✅ <b>Імпорт завершено!</b>\n\n"
+            f"� Додано треків: <b>{imported_count}</b> з {len(tracks)}\n"
+            f"💾 Переглянути: Моя музика → 💾 Збережена музика → 🎵 Треки",
+            parse_mode=ParseMode.HTML
+        )
+        
+    except Exception as e:
+        logger.error(f"Помилка при імпорті з YouTube Music: {e}")
+        await message.answer("❌ Виникла помилка при імпорті.")
+    finally:
+        await state.clear()
+
+
+@dp.message(SearchStates.waiting_for_import_soundcloud)
+async def process_import_soundcloud(message: Message, state: FSMContext):
+    """Обробка імпорту з SoundCloud"""
+    user_input = message.text.strip()
+    
+    await message.answer("⏳ Імпортую треки з SoundCloud...", reply_markup=ReplyKeyboardRemove())
+    
+    try:
+        # Парсимо плейлист
+        tracks = await get_soundcloud_playlist_tracks(user_input)
+        
+        if not tracks:
+            await message.answer(
+                "❌ <b>Не вдалося отримати треки з плейлиста</b>\n\n"
+                "Переконайся, що посилання правильне та плейлист доступний.",
+                parse_mode=ParseMode.HTML
+            )
+            await state.clear()
+            return
+        
+        # Додаємо треки до обраного
+        user_id = message.from_user.id
+        imported_count = 0
+        
+        for track in tracks:
+            track_data = {
+                'name': track['name'],
+                'artist': track['artist'],
+                'url': track['url']
+            }
+            if add_to_favorites(user_id, 'track', track_data):
+                imported_count += 1
+        
+        await message.answer(
+            f"✅ <b>Імпорт завершено!</b>\n\n"
+            f"� Додано треків: <b>{imported_count}</b> з {len(tracks)}\n"
+            f"💾 Переглянути: Моя музика → 💾 Збережена музика → 🎵 Треки",
+            parse_mode=ParseMode.HTML
+        )
+        
+    except Exception as e:
+        logger.error(f"Помилка при імпорті з SoundCloud: {e}")
+        await message.answer("❌ Виникла помилка при імпорті.")
     finally:
         await state.clear()
 

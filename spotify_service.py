@@ -234,6 +234,7 @@ class SpotifyService:
                     track = item['track']
                     artists = ", ".join([artist['name'] for artist in track['artists']])
                     tracks.append({
+                        'id': track['id'],
                         'name': track['name'],
                         'artists': artists,
                         'album': track['album']['name'],
