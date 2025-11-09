@@ -553,8 +553,12 @@ async def callback_favorites_category(callback: CallbackQuery):
         text += f"{idx}. {emoji} {name}\n"
         keyboard_buttons.append([
             InlineKeyboardButton(
-                text=f"{idx}. {name[:30]}...",
+                text=f"{idx}. {name[:25]}...",
                 callback_data=f"load_fav_{category[:-1]}_{idx-1}"
+            ),
+            InlineKeyboardButton(
+                text="❌",
+                callback_data=f"del_fav_{category[:-1]}_{idx-1}"
             )
         ])
     
@@ -601,13 +605,43 @@ async def callback_load_favorite(callback: CallbackQuery, state: FSMContext):
     
     status_msg = await callback.message.answer("⏳ Завантаження...")
     
-    # Викликаємо відповідний handler
+    # Отримуємо user_id з callback для передачі в handlers
+    user_id = callback.from_user.id
+    
+    # Викликаємо відповідний handler з user_id
     if item_type == "track":
-        await handle_track(callback.message, status_msg, url, is_search=False)
+        await handle_track(callback.message, status_msg, url, is_search=False, user_id=user_id)
     elif item_type == "album":
-        await handle_album(callback.message, status_msg, url, state, is_search=False)
+        await handle_album(callback.message, status_msg, url, state, is_search=False, user_id=user_id)
     else:  # playlist
-        await handle_playlist(callback.message, status_msg, url, state, is_search=False)
+        await handle_playlist(callback.message, status_msg, url, state, is_search=False, user_id=user_id)
+
+
+@dp.callback_query(F.data.startswith("del_fav_"))
+async def callback_delete_favorite(callback: CallbackQuery):
+    """Видалити зі збережених"""
+    parts = callback.data.split("_")
+    item_type = parts[2]  # track, album, playlist
+    item_index = int(parts[3])
+    
+    user_id = callback.from_user.id
+    items = get_favorites(user_id, item_type)
+    
+    if item_index >= len(items):
+        await callback.answer("❌ Елемент не знайдено", show_alert=True)
+        return
+    
+    item = items[item_index]
+    item_url = item['url']
+    
+    # Видаляємо
+    remove_from_favorites(user_id, item_type, item_url)
+    
+    await callback.answer("🗑 Видалено зі збережених!", show_alert=True)
+    
+    # Оновлюємо список
+    category = f"{item_type}s"
+    await callback_favorites_category(callback)
 
 
 # Обробник кнопки "Скасувати"
@@ -1010,7 +1044,7 @@ async def handle_message(message: Message):
         )
 
 
-async def handle_track(message: Message, status_msg: Message, user_input: str, is_search: bool = False):
+async def handle_track(message: Message, status_msg: Message, user_input: str, is_search: bool = False, user_id: int = None):
     """Обробка одного треку"""
     try:
         track_info = None
@@ -1049,12 +1083,14 @@ async def handle_track(message: Message, status_msg: Message, user_input: str, i
         await status_msg.edit_text(info_text, parse_mode=ParseMode.HTML)
         
         # Завантаження з SoundCloud
-        user_bitrate = get_user_bitrate(message.from_user.id)
+        # Використовуємо переданий user_id або з message
+        actual_user_id = user_id if user_id is not None else message.from_user.id
+        user_bitrate = get_user_bitrate(actual_user_id)
         logger.info(f"Завантаження: {track_info['search_query']} ({user_bitrate} kbps)")
         audio_path = soundcloud.download_audio(
             track_info['search_query'],
             f"{track_info['artists']} - {track_info['name']}",
-            message.from_user.id,
+            actual_user_id,
             user_bitrate
         )
         
@@ -1139,7 +1175,9 @@ async def handle_track(message: Message, status_msg: Message, user_input: str, i
         ])
         
         # Зберігаємо інформацію про трек для можливості збереження
-        settings = get_user_settings(message.from_user.id)
+        # Використовуємо переданий user_id або з message
+        actual_user_id = user_id if user_id is not None else message.from_user.id
+        settings = get_user_settings(actual_user_id)
         if 'temp_items' not in settings:
             settings['temp_items'] = {}
         
@@ -1166,7 +1204,7 @@ async def handle_track(message: Message, status_msg: Message, user_input: str, i
         )
 
 
-async def handle_playlist(message: types.Message, status_msg: types.Message, user_input: str, state: FSMContext = None, is_search: bool = False):
+async def handle_playlist(message: types.Message, status_msg: types.Message, user_input: str, state: FSMContext = None, is_search: bool = False, user_id: int | None = None):
     """Обробка плейлиста зі Spotify"""
     try:
         playlist_url = user_input
@@ -1256,11 +1294,13 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
                 )
                 
                 # Завантаження з SoundCloud
-                user_bitrate = get_user_bitrate(message.from_user.id)
+                # Використовуємо переданий user_id або з message
+                actual_user_id = user_id if user_id is not None else message.from_user.id
+                user_bitrate = get_user_bitrate(actual_user_id)
                 audio_path = soundcloud.download_audio(
                     track_info['search_query'],
                     f"{track_info['artists']} - {track_info['name']}",
-                    message.from_user.id,
+                    actual_user_id,
                     user_bitrate
                 )
                 
@@ -1362,7 +1402,9 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
             ])
             
             # Зберігаємо інформацію про плейліст
-            settings = get_user_settings(message.from_user.id)
+            # Використовуємо переданий user_id або з message
+            actual_user_id = user_id if user_id is not None else message.from_user.id
+            settings = get_user_settings(actual_user_id)
             if 'temp_items' not in settings:
                 settings['temp_items'] = {}
             
@@ -1396,7 +1438,7 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
         )
 
 
-async def handle_album(message: types.Message, status_msg: types.Message, user_input: str, state: FSMContext = None, is_search: bool = False):
+async def handle_album(message: types.Message, status_msg: types.Message, user_input: str, state: FSMContext = None, is_search: bool = False, user_id: int | None = None):
     """Обробка альбому зі Spotify"""
     try:
         album_url = user_input
@@ -1487,11 +1529,13 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
                 )
                 
                 # Завантаження з SoundCloud
-                user_bitrate = get_user_bitrate(message.from_user.id)
+                # Використовуємо переданий user_id або з message
+                actual_user_id = user_id if user_id is not None else message.from_user.id
+                user_bitrate = get_user_bitrate(actual_user_id)
                 audio_path = soundcloud.download_audio(
                     track_info['search_query'],
                     f"{track_info['artists']} - {track_info['name']}",
-                    message.from_user.id,
+                    actual_user_id,
                     user_bitrate
                 )
                 
@@ -1594,7 +1638,9 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
             ])
             
             # Зберігаємо інформацію про альбом
-            settings = get_user_settings(message.from_user.id)
+            # Використовуємо переданий user_id або з message
+            actual_user_id = user_id if user_id is not None else message.from_user.id
+            settings = get_user_settings(actual_user_id)
             if 'temp_items' not in settings:
                 settings['temp_items'] = {}
             
