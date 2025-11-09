@@ -319,8 +319,132 @@ async def callback_search_playlist(callback: CallbackQuery, state: FSMContext):
 # Заглушки для інших кнопок
 @dp.callback_query(F.data == "top50")
 async def callback_top50(callback: CallbackQuery):
-    """ТОП-50 (поки заглушка)"""
-    await callback.answer("🔥 ТОП-50 - скоро буде доступно!", show_alert=True)
+    """ТОП-50 треків"""
+    try:
+        # Завантажуємо топ-50 з JSON файлу
+        with open("top50.json", "r", encoding="utf-8") as f:
+            top50_data = json.load(f)
+        
+        tracks = top50_data.get("tracks", [])
+        
+        if not tracks:
+            await callback.answer("❌ ТОП-50 поки недоступний", show_alert=True)
+            return
+        
+        # Створюємо кнопки з треками (по 5 на сторінку)
+        page = 0
+        tracks_per_page = 10
+        
+        await show_top50_page(callback, tracks, page, tracks_per_page)
+        await callback.answer()
+        
+    except FileNotFoundError:
+        await callback.answer("❌ ТОП-50 поки недоступний", show_alert=True)
+    except Exception as e:
+        logger.error(f"Помилка при завантаженні ТОП-50: {e}")
+        await callback.answer("❌ Помилка завантаження", show_alert=True)
+
+
+async def show_top50_page(callback: CallbackQuery, tracks: list, page: int, tracks_per_page: int):
+    """Показати сторінку ТОП-50"""
+    total_pages = (len(tracks) - 1) // tracks_per_page + 1
+    start_idx = page * tracks_per_page
+    end_idx = min(start_idx + tracks_per_page, len(tracks))
+    
+    # Створюємо кнопки для треків на поточній сторінці
+    keyboard_buttons = []
+    for idx in range(start_idx, end_idx):
+        track = tracks[idx]
+        track_text = f"{idx + 1}. {track['artist']} - {track['name']}"
+        if len(track_text) > 35:
+            track_text = track_text[:32] + "..."
+        
+        keyboard_buttons.append([
+            InlineKeyboardButton(
+                text=track_text,
+                callback_data=f"top50_track_{idx}"
+            )
+        ])
+    
+    # Кнопки навігації
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton(text="◀️ Назад", callback_data=f"top50_page_{page - 1}"))
+    
+    nav_buttons.append(InlineKeyboardButton(text=f"📄 {page + 1}/{total_pages}", callback_data="ignore"))
+    
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton(text="Вперед ▶️", callback_data=f"top50_page_{page + 1}"))
+    
+    keyboard_buttons.append(nav_buttons)
+    keyboard_buttons.append([InlineKeyboardButton(text="🔙 Головне меню", callback_data="back_to_main")])
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+    
+    text = (
+        "🔥 <b>ТОП-50 ТРЕКІВ</b>\n\n"
+        f"📄 Сторінка {page + 1} з {total_pages}\n"
+        "Обери трек для завантаження:"
+    )
+    
+    await callback.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+
+
+@dp.callback_query(F.data.startswith("top50_page_"))
+async def callback_top50_page(callback: CallbackQuery):
+    """Перехід на іншу сторінку ТОП-50"""
+    try:
+        page = int(callback.data.split("_")[2])
+        
+        # Завантажуємо топ-50 з JSON файлу
+        with open("top50.json", "r", encoding="utf-8") as f:
+            top50_data = json.load(f)
+        
+        tracks = top50_data.get("tracks", [])
+        tracks_per_page = 10
+        
+        await show_top50_page(callback, tracks, page, tracks_per_page)
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"Помилка при навігації ТОП-50: {e}")
+        await callback.answer("❌ Помилка", show_alert=True)
+
+
+@dp.callback_query(F.data.startswith("top50_track_"))
+async def callback_top50_track(callback: CallbackQuery, state: FSMContext):
+    """Завантаження треку з ТОП-50"""
+    try:
+        track_idx = int(callback.data.split("_")[2])
+        
+        # Завантажуємо топ-50 з JSON файлу
+        with open("top50.json", "r", encoding="utf-8") as f:
+            top50_data = json.load(f)
+        
+        tracks = top50_data.get("tracks", [])
+        
+        if track_idx >= len(tracks):
+            await callback.answer("❌ Трек не знайдено", show_alert=True)
+            return
+        
+        track = tracks[track_idx]
+        spotify_url = track['spotify_url']
+        
+        await callback.answer(f"⏳ Завантажую {track['name']}...", show_alert=False)
+        
+        # Створюємо повідомлення про завантаження
+        status_msg = await callback.message.answer(
+            f"⏳ Завантаження треку #{track_idx + 1}...\n"
+            f"🎵 {track['artist']} - {track['name']}"
+        )
+        
+        # Викликаємо handle_track з user_id
+        user_id = callback.from_user.id
+        await handle_track(callback.message, status_msg, spotify_url, is_search=False, user_id=user_id)
+        
+    except Exception as e:
+        logger.error(f"Помилка при завантаженні треку з ТОП-50: {e}")
+        await callback.answer("❌ Помилка завантаження", show_alert=True)
 
 
 @dp.callback_query(F.data == "settings")
@@ -716,6 +840,11 @@ async def callback_already_saved(callback: CallbackQuery):
     """Повідомлення що вже збережено"""
     await callback.answer("✅ Цей елемент вже в збережених!", show_alert=True)
 
+
+@dp.callback_query(F.data == "ignore")
+async def callback_ignore(callback: CallbackQuery):
+    """Ігнорувати натискання на індикатор сторінки"""
+    await callback.answer()
 
 
 @dp.message(Command("help"))
