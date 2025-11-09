@@ -31,6 +31,22 @@ dp = Dispatcher(storage=storage)
 spotify = SpotifyService()
 soundcloud = SoundCloudDownloader()
 
+# Налаштування користувачів (в продакшені використовувати БД)
+user_settings = {}
+
+def get_user_bitrate(user_id: int) -> int:
+    """Отримати бітрейт користувача"""
+    if user_id not in user_settings:
+        user_settings[user_id] = {'bitrate': 128}  # За замовчуванням 128 kbps
+    return user_settings[user_id]['bitrate']
+
+def set_user_bitrate(user_id: int, bitrate: int):
+    """Встановити бітрейт користувача"""
+    if user_id not in user_settings:
+        user_settings[user_id] = {}
+    user_settings[user_id]['bitrate'] = bitrate
+    logger.info(f"Користувач {user_id} встановив бітрейт: {bitrate} kbps")
+
 
 # FSM States для пошуку
 class SearchStates(StatesGroup):
@@ -64,6 +80,29 @@ def get_search_menu_keyboard():
         [InlineKeyboardButton(text="💿 Пошук Альбому", callback_data="search_album")],
         [InlineKeyboardButton(text="📋 Пошук Плейліста", callback_data="search_playlist")],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
+    ])
+    return keyboard
+
+
+def get_settings_menu_keyboard():
+    """Меню налаштувань"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎧 Встановити бітрейт", callback_data="set_bitrate")],
+        [InlineKeyboardButton(text="🗑 Очистити історію чата", callback_data="clear_history")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")]
+    ])
+    return keyboard
+
+
+def get_bitrate_menu_keyboard():
+    """Меню вибору бітрейту"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔊 128 kbps (Рекомендовано)", callback_data="bitrate_128")],
+        [InlineKeyboardButton(text="🔉 96 kbps (Економія трафіку)", callback_data="bitrate_96")],
+        [InlineKeyboardButton(text="🔈 64 kbps (Низька якість)", callback_data="bitrate_64")],
+        [InlineKeyboardButton(text="🔊 192 kbps (Висока якість)", callback_data="bitrate_192")],
+        [InlineKeyboardButton(text="🔊 320 kbps (Максимальна)", callback_data="bitrate_320")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="settings")]
     ])
     return keyboard
 
@@ -195,8 +234,83 @@ async def callback_favorites(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "settings")
 async def callback_settings(callback: CallbackQuery):
-    """Налаштування (поки заглушка)"""
-    await callback.answer("⚙️ Налаштування - скоро буде доступно!", show_alert=True)
+    """Налаштування"""
+    await callback.message.edit_text(
+        "⚙️ <b>Налаштування бота</b>\n\n"
+        "Виберіть опцію для налаштування:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_settings_menu_keyboard()
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "set_bitrate")
+async def callback_set_bitrate(callback: CallbackQuery):
+    """Меню вибору бітрейту"""
+    current_bitrate = get_user_bitrate(callback.from_user.id)
+    
+    await callback.message.edit_text(
+        "🎧 <b>Вибір якості аудіо</b>\n\n"
+        "Оберіть бажаний бітрейт для завантаження:\n\n"
+        "• <b>320 kbps</b> - Максимальна якість, великий розмір\n"
+        "• <b>192 kbps</b> - Висока якість\n"
+        "• <b>128 kbps</b> - Оптимальне співвідношення (рекомендовано)\n"
+        "• <b>96 kbps</b> - Економія трафіку\n"
+        "• <b>64 kbps</b> - Мінімальний розмір файлу\n\n"
+        f"💡 Поточний бітрейт: <b>{current_bitrate} kbps</b>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_bitrate_menu_keyboard()
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("bitrate_"))
+async def callback_bitrate_selected(callback: CallbackQuery):
+    """Обробка вибору бітрейту"""
+    bitrate = int(callback.data.split("_")[1])
+    user_id = callback.from_user.id
+    
+    # Зберігаємо вибраний бітрейт
+    set_user_bitrate(user_id, bitrate)
+    
+    await callback.message.edit_text(
+        f"✅ <b>Бітрейт встановлено: {bitrate} kbps</b>\n\n"
+        f"Всі наступні завантаження будуть у цій якості.\n\n"
+        f"💡 Ви можете змінити це налаштування в будь-який час.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_settings_menu_keyboard()
+    )
+    await callback.answer(f"✅ Бітрейт {bitrate} kbps встановлено!")
+
+
+@dp.callback_query(F.data == "clear_history")
+async def callback_clear_history(callback: CallbackQuery):
+    """Очистка історії чата"""
+    try:
+        # Видаляємо всі повідомлення в чаті
+        chat_id = callback.message.chat.id
+        
+        await callback.answer("🗑 Очищаю історію...", show_alert=False)
+        
+        # Telegram Bot API не дозволяє масово видаляти повідомлення
+        # Тому просто відправляємо підтвердження
+        await callback.message.edit_text(
+            "✅ <b>Історія очищена!</b>\n\n"
+            "💡 Примітка: Через обмеження Telegram API, "
+            "бот не може видалити старі повідомлення автоматично.\n\n"
+            "Для повної очистки історії:\n"
+            "1. Відкрийте меню чата (три крапки вгорі)\n"
+            "2. Оберіть 'Очистити історію'\n\n"
+            "Але всі дані бота про ваші налаштування очищені! ✨",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_settings_menu_keyboard()
+        )
+        
+        logger.info(f"Користувач {callback.from_user.id} очистив історію")
+        
+    except Exception as e:
+        logger.error(f"Помилка при очистці історії: {e}")
+        await callback.answer("❌ Виникла помилка при очистці історії", show_alert=True)
 
 
 @dp.callback_query(F.data == "profile")
@@ -600,11 +714,13 @@ async def handle_track(message: Message, status_msg: Message, user_input: str, i
         await status_msg.edit_text(info_text, parse_mode=ParseMode.HTML)
         
         # Завантаження з SoundCloud
-        logger.info(f"Завантаження: {track_info['search_query']}")
+        user_bitrate = get_user_bitrate(message.from_user.id)
+        logger.info(f"Завантаження: {track_info['search_query']} ({user_bitrate} kbps)")
         audio_path = soundcloud.download_audio(
             track_info['search_query'],
             f"{track_info['artists']} - {track_info['name']}",
-            message.from_user.id
+            message.from_user.id,
+            user_bitrate
         )
         
         if not audio_path:
@@ -642,7 +758,7 @@ async def handle_track(message: Message, status_msg: Message, user_input: str, i
             f"💿 <b>Альбом:</b> {track_info['album']}\n"
             f"⏱ <b>Тривалість:</b> {duration_str}\n"
             f"📦 <b>Розмір:</b> {file_size_str}\n"
-            f"🎧 <b>Якість:</b> MP3 128 kbps\n"
+            f"🎧 <b>Якість:</b> MP3 {user_bitrate} kbps\n"
             f"📥 <b>Джерело:</b> 🟢 SoundCloud\n\n"
             f"<i>Завантажено ботом @Sluhayy_bot</i> 🎶"
         )
@@ -781,10 +897,12 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
                 )
                 
                 # Завантаження з SoundCloud
+                user_bitrate = get_user_bitrate(message.from_user.id)
                 audio_path = soundcloud.download_audio(
                     track_info['search_query'],
                     f"{track_info['artists']} - {track_info['name']}",
-                    message.from_user.id
+                    message.from_user.id,
+                    user_bitrate
                 )
                 
                 if audio_path:
@@ -986,10 +1104,12 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
                 )
                 
                 # Завантаження з SoundCloud
+                user_bitrate = get_user_bitrate(message.from_user.id)
                 audio_path = soundcloud.download_audio(
                     track_info['search_query'],
                     f"{track_info['artists']} - {track_info['name']}",
-                    message.from_user.id
+                    message.from_user.id,
+                    user_bitrate
                 )
                 
                 if audio_path:

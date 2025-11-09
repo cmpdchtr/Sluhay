@@ -10,7 +10,7 @@ class SoundCloudDownloader:
         """Ініціалізація завантажувача"""
         self.download_dir = config.DOWNLOADS_DIR
     
-    def download_audio(self, search_query: str, track_name: str, user_id: int = None) -> str | None:
+    def download_audio(self, search_query: str, track_name: str, user_id: int = None, bitrate: int = 128) -> str | None:
         """
         Завантажує аудіо з SoundCloud за пошуковим запитом
         
@@ -18,6 +18,7 @@ class SoundCloudDownloader:
             search_query: Пошуковий запит (виконавець - назва)
             track_name: Назва треку для імені файлу
             user_id: ID користувача для унікальності файлу
+            bitrate: Бітрейт для конвертації (64, 96, 128, 192, 320)
             
         Returns:
             Шлях до завантаженого файлу або None
@@ -45,7 +46,7 @@ class SoundCloudDownloader:
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
-                    'preferredquality': '128',
+                    'preferredquality': str(bitrate),  # Використовуємо бітрейт користувача
                 }],
                 'outtmpl': os.path.join(self.download_dir, f"{safe_filename}.%(ext)s"),
                 'quiet': True,
