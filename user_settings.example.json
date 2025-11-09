@@ -30,6 +30,13 @@
         }
       ]
     },
+    "stats": {
+      "tracks_downloaded": 42,
+      "albums_downloaded": 5,
+      "playlists_downloaded": 3,
+      "total_duration_sec": 7200,
+      "total_size_mb": 350.5
+    },
     "temp_items": {}
   }
 }

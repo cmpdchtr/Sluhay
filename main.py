@@ -76,9 +76,26 @@ def get_user_settings(user_id: int) -> dict:
                 'tracks': [],      # [{'name': str, 'artist': str, 'url': str, 'saved_at': str}]
                 'albums': [],      # [{'name': str, 'artist': str, 'url': str, 'saved_at': str}]
                 'playlists': []    # [{'name': str, 'owner': str, 'url': str, 'saved_at': str}]
+            },
+            'stats': {
+                'tracks_downloaded': 0,      # Кількість завантажених треків
+                'albums_downloaded': 0,      # Кількість завантажених альбомів
+                'playlists_downloaded': 0,   # Кількість завантажених плейлістів
+                'total_duration_sec': 0,     # Загальна тривалість у секундах
+                'total_size_mb': 0.0         # Загальний розмір у МБ
             }
         }
         save_user_settings()  # Зберігаємо після створення
+    # Перевіряємо чи є stats, якщо ні - додаємо (для старих користувачів)
+    if 'stats' not in user_settings[user_id]:
+        user_settings[user_id]['stats'] = {
+            'tracks_downloaded': 0,
+            'albums_downloaded': 0,
+            'playlists_downloaded': 0,
+            'total_duration_sec': 0,
+            'total_size_mb': 0.0
+        }
+        save_user_settings()
     return user_settings[user_id]
 
 def get_user_bitrate(user_id: int) -> int:
@@ -143,6 +160,30 @@ def get_favorites(user_id: int, item_type: str = None) -> dict:
     if item_type:
         return settings['favorites'].get(f"{item_type}s", [])
     return settings['favorites']
+
+
+def add_download_stats(user_id: int, item_type: str, duration_sec: int = 0, size_mb: float = 0.0):
+    """Додати статистику завантаження"""
+    settings = get_user_settings(user_id)
+    
+    if item_type == 'track':
+        settings['stats']['tracks_downloaded'] += 1
+    elif item_type == 'album':
+        settings['stats']['albums_downloaded'] += 1
+    elif item_type == 'playlist':
+        settings['stats']['playlists_downloaded'] += 1
+    
+    settings['stats']['total_duration_sec'] += duration_sec
+    settings['stats']['total_size_mb'] += size_mb
+    
+    save_user_settings()
+    logger.info(f"Статистика оновлена для користувача {user_id}: {item_type}, {duration_sec}s, {size_mb}MB")
+
+
+def get_user_stats(user_id: int) -> dict:
+    """Отримати статистику користувача"""
+    settings = get_user_settings(user_id)
+    return settings['stats']
 
 
 # FSM States для пошуку
@@ -583,8 +624,110 @@ async def callback_clear_history_confirm(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "profile")
 async def callback_profile(callback: CallbackQuery):
-    """Профіль (поки заглушка)"""
-    await callback.answer("👤 Профіль - скоро буде доступно!", show_alert=True)
+    """Профіль користувача"""
+    user_id = callback.from_user.id
+    user_name = callback.from_user.first_name or "друже"
+    
+    # Отримуємо статистику
+    stats = get_user_stats(user_id)
+    favorites = get_favorites(user_id)
+    
+    # Підраховуємо збережені
+    total_saved = len(favorites['tracks']) + len(favorites['albums']) + len(favorites['playlists'])
+    
+    # Форматуємо тривалість (переводимо секунди в хвилини)
+    total_minutes = stats['total_duration_sec'] // 60
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
+    
+    # Форматуємо розмір
+    total_mb = stats['total_size_mb']
+    
+    # Отримуємо бітрейт
+    current_bitrate = get_user_bitrate(user_id)
+    
+    # Формуємо текст профілю
+    profile_text = (
+        f"👤 <b>ПРОФІЛЬ</b>\n\n"
+        f"👋 Привіт, {user_name}!\n\n"
+        f"📊 <b>СТАТИСТИКА:</b>\n"
+        f"📥 Завантажено треків: {stats['tracks_downloaded']}\n"
+        f"💿 Завантажено альбомів: {stats['albums_downloaded']}\n"
+        f"📋 Завантажено плейлістів: {stats['playlists_downloaded']}\n"
+        f"⭐ Збережених: {total_saved}\n\n"
+    )
+    
+    # Додаємо інформацію про тривалість або розмір
+    if hours > 0:
+        profile_text += f"🎵 Це <b>{hours} год {minutes} хв</b> музики!\n"
+    elif minutes > 0:
+        profile_text += f"🎵 Це <b>{minutes} хв</b> музики!\n"
+    
+    if total_mb >= 1024:
+        profile_text += f"💾 Або <b>{total_mb/1024:.2f} ГБ</b> аудіо!\n"
+    elif total_mb > 0:
+        profile_text += f"💾 Або <b>{total_mb:.2f} МБ</b> аудіо!\n"
+    
+    profile_text += f"\n⚙️ <b>НАЛАШТУВАННЯ:</b>\n🎧 Бітрейт: <b>{current_bitrate} kbps</b>"
+    
+    # Кнопки
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🔙 Головне меню", callback_data="back_to_main")
+        ]
+    ])
+    
+    await callback.message.edit_text(
+        profile_text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "clear_stats")
+async def callback_clear_stats(callback: CallbackQuery):
+    """Очищення статистики"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="❌ Так, очистити", callback_data="clear_stats_confirm"),
+            InlineKeyboardButton(text="◀️ Назад", callback_data="profile")
+        ]
+    ])
+    
+    await callback.message.edit_text(
+        "�️ <b>Очищення даних</b>\n\n"
+        "⚠️ Ти впевнений що хочеш очистити статистику?\n\n"
+        "Це видалить:\n"
+        "• Лічильники завантажень\n"
+        "• Статистику по тривалості та розміру\n\n"
+        "❗️ Збережені треки/альбоми/плейлісти НЕ будуть видалені!",
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "clear_stats_confirm")
+async def callback_clear_stats_confirm(callback: CallbackQuery):
+    """Підтвердження очищення статистики"""
+    user_id = callback.from_user.id
+    settings = get_user_settings(user_id)
+    
+    # Скидаємо статистику
+    settings['stats'] = {
+        'tracks_downloaded': 0,
+        'albums_downloaded': 0,
+        'playlists_downloaded': 0,
+        'total_duration_sec': 0,
+        'total_size_mb': 0.0
+    }
+    save_user_settings()
+    
+    await callback.answer("✅ Статистику очищено!", show_alert=True)
+    
+    # Повертаємось до профілю
+    await callback_profile(callback)
 
 
 @dp.callback_query(F.data == "favorites")
@@ -1285,6 +1428,10 @@ async def handle_track(message: Message, status_msg: Message, user_input: str, i
             thumbnail=thumbnail
         )
         
+        # Оновлюємо статистику користувача
+        actual_user_id = user_id if user_id is not None else message.from_user.id
+        add_download_stats(actual_user_id, 'track', duration_sec, file_size_mb)
+        
         # Видаляємо статусне повідомлення
         await status_msg.delete()
         
@@ -1434,10 +1581,20 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
                 )
                 
                 if audio_path:
+                    # Отримуємо розмір файлу
+                    file_size = os.path.getsize(audio_path)
+                    file_size_mb = file_size / (1024 * 1024)
+                    
+                    # Отримуємо тривалість
+                    duration_ms = track_info.get('duration_ms', 0)
+                    duration_sec = duration_ms // 1000
+                    
                     downloaded_files.append({
                         'path': audio_path,
                         'title': track_info['name'],
-                        'performer': track_info['artists']
+                        'performer': track_info['artists'],
+                        'duration_sec': duration_sec,
+                        'size_mb': file_size_mb
                     })
                 else:
                     failed_tracks.append(track_info['name'])
@@ -1517,6 +1674,12 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
             
             # Видаляємо статусне повідомлення
             await status_msg.delete()
+            
+            # Оновлюємо статистику користувача
+            actual_user_id = user_id if user_id is not None else message.from_user.id
+            total_duration = sum(f['duration_sec'] for f in downloaded_files)
+            total_size = sum(f['size_mb'] for f in downloaded_files)
+            add_download_stats(actual_user_id, 'playlist', total_duration, total_size)
             
             # Генеруємо унікальний ID для плейліста
             playlist_id = hashlib.md5(f"{playlist_info['owner']}_{playlist_info['name']}".encode()).hexdigest()[:16]
@@ -1669,10 +1832,20 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
                 )
                 
                 if audio_path:
+                    # Отримуємо розмір файлу
+                    file_size = os.path.getsize(audio_path)
+                    file_size_mb = file_size / (1024 * 1024)
+                    
+                    # Отримуємо тривалість
+                    duration_ms = track_info.get('duration_ms', 0)
+                    duration_sec = duration_ms // 1000
+                    
                     downloaded_files.append({
                         'path': audio_path,
                         'title': track_info['name'],
-                        'performer': track_info['artists']
+                        'performer': track_info['artists'],
+                        'duration_sec': duration_sec,
+                        'size_mb': file_size_mb
                     })
                 else:
                     failed_tracks.append(track_info['name'])
@@ -1753,6 +1926,12 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
             
             # Видаляємо статусне повідомлення
             await status_msg.delete()
+            
+            # Оновлюємо статистику користувача
+            actual_user_id = user_id if user_id is not None else message.from_user.id
+            total_duration = sum(f['duration_sec'] for f in downloaded_files)
+            total_size = sum(f['size_mb'] for f in downloaded_files)
+            add_download_stats(actual_user_id, 'album', total_duration, total_size)
             
             # Генеруємо унікальний ID для альбому
             album_id = hashlib.md5(f"{album_info['artist']}_{album_info['name']}".encode()).hexdigest()[:16]
