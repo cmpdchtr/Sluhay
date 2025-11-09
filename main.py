@@ -418,7 +418,7 @@ async def show_top50_page(callback: CallbackQuery, tracks: list, page: int, trac
         nav_buttons.append(InlineKeyboardButton(text="Вперед ▶️", callback_data=f"top50_page_{page + 1}"))
     
     keyboard_buttons.append(nav_buttons)
-    keyboard_buttons.append([InlineKeyboardButton(text="🔙 Головне меню", callback_data="back_to_main")])
+    keyboard_buttons.append([InlineKeyboardButton(text="◀️ Головне меню", callback_data="back_to_main")])
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
     
@@ -673,10 +673,10 @@ async def callback_profile(callback: CallbackQuery):
     # Кнопки
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="�️ Очистити дані", callback_data="clear_menu")
+            InlineKeyboardButton(text="🗑️ Очистити дані", callback_data="clear_menu")
         ],
         [
-            InlineKeyboardButton(text="�🔙 Головне меню", callback_data="back_to_main")
+            InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")
         ]
     ])
     
