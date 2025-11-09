@@ -589,13 +589,21 @@ async def callback_load_favorite(callback: CallbackQuery, state: FSMContext):
     item = items[item_index]
     url = item['url']
     
+    # Перевірка чи це Spotify URL
+    if not url.startswith('https://open.spotify.com/'):
+        await callback.answer(
+            "❌ Невірне посилання. Спробуйте видалити та зберегти знову.",
+            show_alert=True
+        )
+        return
+    
     await callback.answer("⏳ Завантажую...", show_alert=False)
     
     status_msg = await callback.message.answer("⏳ Завантаження...")
     
     # Викликаємо відповідний handler
     if item_type == "track":
-        await handle_track(callback.message, status_msg, url, state, is_search=False)
+        await handle_track(callback.message, status_msg, url, is_search=False)
     elif item_type == "album":
         await handle_album(callback.message, status_msg, url, state, is_search=False)
     else:  # playlist
@@ -1139,7 +1147,7 @@ async def handle_track(message: Message, status_msg: Message, user_input: str, i
             'type': 'track',
             'name': track_info['name'],
             'artist': track_info['artists'],
-            'url': user_input if not is_search else track_info.get('spotify_url', user_input)
+            'url': track_info.get('spotify_url', user_input)  # Завжди використовуємо spotify_url
         }
         
         # Показуємо меню з кнопкою збереження
@@ -1362,7 +1370,7 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
                 'type': 'playlist',
                 'name': playlist_info['name'],
                 'owner': playlist_info['owner'],
-                'url': user_input
+                'url': playlist_info.get('spotify_url', user_input)  # Використовуємо spotify_url
             }
             
             # Показуємо меню (прибираємо Reply клавіатуру)
@@ -1593,8 +1601,8 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
             settings['temp_items'][album_id] = {
                 'type': 'album',
                 'name': album_info['name'],
-                'artist': album_info['artist'],  # Використовуємо 'artist' (не 'artists')
-                'url': user_input
+                'artist': album_info['artist'],
+                'url': album_info.get('spotify_url', user_input)  # Використовуємо spotify_url
             }
             
             # Показуємо меню (прибираємо Reply клавіатуру)

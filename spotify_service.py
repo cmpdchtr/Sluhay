@@ -105,13 +105,15 @@ class SpotifyService:
             artists = ", ".join([artist['name'] for artist in track['artists']])
             
             track_info = {
+                'id': track['id'],
                 'name': track['name'],
                 'artists': artists,
                 'album': track['album']['name'],
                 'duration_ms': track['duration_ms'],
                 'preview_url': track.get('preview_url'),
                 'image_url': track['album']['images'][0]['url'] if track['album']['images'] else None,
-                'search_query': f"{artists} - {track['name']}"
+                'search_query': f"{artists} - {track['name']}",
+                'spotify_url': f"https://open.spotify.com/track/{track['id']}"
             }
             
             return track_info
@@ -140,13 +142,15 @@ class SpotifyService:
             artists = ", ".join([artist['name'] for artist in track['artists']])
             
             track_info = {
+                'id': track['id'],
                 'name': track['name'],
                 'artists': artists,
                 'album': track['album']['name'],
                 'duration_ms': track['duration_ms'],
                 'preview_url': track.get('preview_url'),
                 'image_url': track['album']['images'][0]['url'] if track['album']['images'] else None,
-                'search_query': f"{artists} - {track['name']}"
+                'search_query': f"{artists} - {track['name']}",
+                'spotify_url': f"https://open.spotify.com/track/{track['id']}"
             }
             
             return track_info
@@ -244,6 +248,7 @@ class SpotifyService:
                 'owner': playlist['owner']['display_name'],
                 'total_tracks': len(tracks),
                 'image_url': playlist['images'][0]['url'] if playlist['images'] else None,
+                'spotify_url': f"https://open.spotify.com/playlist/{playlist['id']}",
                 'tracks': tracks
             }
             
@@ -288,6 +293,7 @@ class SpotifyService:
                 'release_date': album.get('release_date', ''),
                 'total_tracks': len(tracks),
                 'image_url': album['images'][0]['url'] if album['images'] else None,
+                'spotify_url': f"https://open.spotify.com/album/{album['id']}",
                 'tracks': tracks
             }
             
