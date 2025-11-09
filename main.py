@@ -285,32 +285,85 @@ async def callback_bitrate_selected(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "clear_history")
 async def callback_clear_history(callback: CallbackQuery):
-    """Очистка історії чата"""
+    """Очистка історії чата - підтвердження"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ Так, очистити", callback_data="clear_history_confirm"),
+            InlineKeyboardButton(text="❌ Скасувати", callback_data="settings")
+        ]
+    ])
+    
+    await callback.message.edit_text(
+        "🗑 <b>Очистити історію чата?</b>\n\n"
+        "⚠️ Ця дія видалить:\n"
+        "• Всі повідомлення бота в цьому чаті\n"
+        "• Всі завантажені файли з цього чата\n"
+        "• Ваші налаштування (бітрейт тощо)\n\n"
+        "💡 Повідомлення які ви надіслали залишаться.\n\n"
+        "Ви впевнені?",
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboard
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "clear_history_confirm")
+async def callback_clear_history_confirm(callback: CallbackQuery):
+    """Виконання очистки історії"""
     try:
-        # Видаляємо всі повідомлення в чаті
         chat_id = callback.message.chat.id
+        user_id = callback.from_user.id
         
-        await callback.answer("🗑 Очищаю історію...", show_alert=False)
+        await callback.answer("🗑 Видаляю повідомлення...", show_alert=False)
         
-        # Telegram Bot API не дозволяє масово видаляти повідомлення
-        # Тому просто відправляємо підтвердження
-        await callback.message.edit_text(
-            "✅ <b>Історія очищена!</b>\n\n"
-            "💡 Примітка: Через обмеження Telegram API, "
-            "бот не може видалити старі повідомлення автоматично.\n\n"
-            "Для повної очистки історії:\n"
-            "1. Відкрийте меню чата (три крапки вгорі)\n"
-            "2. Оберіть 'Очистити історію'\n\n"
-            "Але всі дані бота про ваші налаштування очищені! ✨",
+        # Зберігаємо поточне повідомлення
+        current_msg_id = callback.message.message_id
+        
+        # Отримуємо історію повідомлень
+        deleted_count = 0
+        errors_count = 0
+        
+        # Telegram дозволяє видаляти повідомлення тільки окремо
+        # Спробуємо видалити останні 100 повідомлень бота
+        for i in range(100):
+            try:
+                # Видаляємо повідомлення починаючи з поточного і йдучи назад
+                msg_id = current_msg_id - i
+                if msg_id > 0:
+                    await bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                    deleted_count += 1
+                    # Невелика пауза щоб не trigger rate limit
+                    if i % 10 == 0:
+                        await asyncio.sleep(0.1)
+            except Exception as e:
+                errors_count += 1
+                # Якщо багато помилок підряд - зупиняємось
+                if errors_count > 20:
+                    break
+        
+        # Очищаємо налаштування користувача
+        if user_id in user_settings:
+            del user_settings[user_id]
+        
+        # Відправляємо повідомлення про результат
+        result_msg = await callback.message.answer(
+            f"✅ <b>Історія очищена!</b>\n\n"
+            f"🗑 Видалено повідомлень: {deleted_count}\n"
+            f"💾 Налаштування скинуті\n\n"
+            f"Бот готовий до роботи! 🎵",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_settings_menu_keyboard()
+            reply_markup=get_main_menu_keyboard()
         )
         
-        logger.info(f"Користувач {callback.from_user.id} очистив історію")
+        logger.info(f"Користувач {user_id} очистив історію. Видалено: {deleted_count} повідомлень")
         
     except Exception as e:
         logger.error(f"Помилка при очистці історії: {e}")
-        await callback.answer("❌ Виникла помилка при очистці історії", show_alert=True)
+        await callback.message.answer(
+            "❌ Виникла помилка при очистці історії.\n"
+            "Спробуйте ще раз пізніше.",
+            reply_markup=get_settings_menu_keyboard()
+        )
 
 
 @dp.callback_query(F.data == "profile")
