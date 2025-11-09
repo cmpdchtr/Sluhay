@@ -37,6 +37,8 @@ class SearchStates(StatesGroup):
     waiting_for_track = State()
     waiting_for_album = State()
     waiting_for_playlist = State()
+    downloading_album = State()
+    downloading_playlist = State()
 
 
 def get_main_menu_keyboard():
@@ -206,7 +208,19 @@ async def callback_profile(callback: CallbackQuery):
 # Обробник кнопки "Скасувати"
 @dp.message(F.text == "❌ Скасувати")
 async def cancel_search(message: Message, state: FSMContext):
-    """Скасування пошуку"""
+    """Скасування пошуку або завантаження"""
+    current_state = await state.get_state()
+    
+    # Якщо йде завантаження - встановлюємо прапорець
+    if current_state in [SearchStates.downloading_album, SearchStates.downloading_playlist]:
+        await state.update_data(cancelled=True)
+        await message.answer(
+            "⏸️ Зупиняю завантаження...",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+    
+    # Інакше - звичайне скасування пошуку
     await state.clear()
     user_name = message.from_user.first_name or "друже"
     await message.answer(
@@ -461,9 +475,9 @@ async def process_album_search(message: Message, state: FSMContext):
     try:
         # Визначаємо тип введення
         if "spotify.com/album/" in user_input or "spotify:album:" in user_input:
-            await handle_album(message, status_msg, user_input, is_search=False)
+            await handle_album(message, status_msg, user_input, state, is_search=False)
         else:
-            await handle_album(message, status_msg, user_input, is_search=True)
+            await handle_album(message, status_msg, user_input, state, is_search=True)
     except Exception as e:
         logger.error(f"Помилка при пошуку альбому: {e}")
         await message.answer("❌ Виникла помилка. Спробуй ще раз.")
@@ -483,9 +497,9 @@ async def process_playlist_search(message: Message, state: FSMContext):
     try:
         # Визначаємо тип введення
         if "spotify.com/playlist/" in user_input or "spotify:playlist:" in user_input:
-            await handle_playlist(message, status_msg, user_input, is_search=False)
+            await handle_playlist(message, status_msg, user_input, state, is_search=False)
         else:
-            await handle_playlist(message, status_msg, user_input, is_search=True)
+            await handle_playlist(message, status_msg, user_input, state, is_search=True)
     except Exception as e:
         logger.error(f"Помилка при пошуку плейліста: {e}")
         await message.answer("❌ Виникла помилка. Спробуй ще раз.")
@@ -677,10 +691,25 @@ async def handle_track(message: Message, status_msg: Message, user_input: str, i
         )
 
 
-async def handle_playlist(message: types.Message, status_msg: types.Message, user_input: str, is_search: bool = False):
+async def handle_playlist(message: types.Message, status_msg: types.Message, user_input: str, state: FSMContext = None, is_search: bool = False):
     """Обробка плейлиста зі Spotify"""
     try:
         playlist_url = user_input
+        
+        # Переходимо в стан завантаження (тільки якщо є state)
+        if state:
+            await state.set_state(SearchStates.downloading_playlist)
+            await state.update_data(cancelled=False)
+            
+            # Показуємо кнопку скасування
+            cancel_keyboard = ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="❌ Скасувати")]],
+                resize_keyboard=True
+            )
+            cancel_msg = await message.answer(
+                "⚠️ Завантаження розпочато...",
+                reply_markup=cancel_keyboard
+            )
         
         # Якщо це текстовий пошук, спочатку шукаємо плейліст
         if is_search:
@@ -727,6 +756,21 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
         failed_tracks = []
         
         for index, track_info in enumerate(tracks, 1):
+            # Перевірка на скасування (якщо є state)
+            if state:
+                data = await state.get_data()
+                if data.get('cancelled', False):
+                    logger.info("Завантаження плейлиста скасовано користувачем")
+                    await status_msg.edit_text("❌ Завантаження скасовано!")
+                    await message.answer(
+                        "🎵 Що далі?",
+                        reply_markup=get_main_menu_keyboard()
+                    )
+                    # Видаляємо вже завантажені файли
+                    for file_info in downloaded_files:
+                        soundcloud.cleanup_file(file_info['path'])
+                    return
+            
             try:
                 await status_msg.edit_text(
                     f"📋 <b>{playlist_info['name']}</b>\n\n"
@@ -828,9 +872,13 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
             # Видаляємо статусне повідомлення
             await status_msg.delete()
             
-            # Показуємо меню
+            # Показуємо меню (прибираємо Reply клавіатуру)
             await message.answer(
                 f"✅ Плейліст відправлено! ({len(downloaded_files)} треків)\n\n🎵 Що далі?",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            await message.answer(
+                "Вибери опцію:",
                 reply_markup=get_main_menu_keyboard()
             )
         else:
@@ -847,10 +895,25 @@ async def handle_playlist(message: types.Message, status_msg: types.Message, use
         )
 
 
-async def handle_album(message: types.Message, status_msg: types.Message, user_input: str, is_search: bool = False):
+async def handle_album(message: types.Message, status_msg: types.Message, user_input: str, state: FSMContext = None, is_search: bool = False):
     """Обробка альбому зі Spotify"""
     try:
         album_url = user_input
+        
+        # Переходимо в стан завантаження (тільки якщо є state)
+        if state:
+            await state.set_state(SearchStates.downloading_album)
+            await state.update_data(cancelled=False)
+            
+            # Показуємо кнопку скасування
+            cancel_keyboard = ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="❌ Скасувати")]],
+                resize_keyboard=True
+            )
+            cancel_msg = await message.answer(
+                "⚠️ Завантаження розпочато...",
+                reply_markup=cancel_keyboard
+            )
         
         # Якщо це текстовий пошук, спочатку шукаємо альбом
         if is_search:
@@ -898,6 +961,21 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
         failed_tracks = []
         
         for index, track_info in enumerate(tracks, 1):
+            # Перевірка на скасування (якщо є state)
+            if state:
+                data = await state.get_data()
+                if data.get('cancelled', False):
+                    logger.info("Завантаження альбому скасовано користувачем")
+                    await status_msg.edit_text("❌ Завантаження скасовано!")
+                    await message.answer(
+                        "🎵 Що далі?",
+                        reply_markup=get_main_menu_keyboard()
+                    )
+                    # Видаляємо вже завантажені файли
+                    for file_info in downloaded_files:
+                        soundcloud.cleanup_file(file_info['path'])
+                    return
+            
             try:
                 await status_msg.edit_text(
                     f"💿 <b>{album_info['name']}</b>\n\n"
@@ -1000,9 +1078,13 @@ async def handle_album(message: types.Message, status_msg: types.Message, user_i
             # Видаляємо статусне повідомлення
             await status_msg.delete()
             
-            # Показуємо меню
+            # Показуємо меню (прибираємо Reply клавіатуру)
             await message.answer(
                 f"✅ Альбом відправлено! ({len(downloaded_files)} треків)\n\n🎵 Що далі?",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            await message.answer(
+                "Вибери опцію:",
                 reply_markup=get_main_menu_keyboard()
             )
         else:
