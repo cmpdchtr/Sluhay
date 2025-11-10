@@ -234,12 +234,13 @@ async def get_soundcloud_playlist_tracks(playlist_url: str) -> list:
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
-            'extract_flat': 'in_playlist',
+            'extract_flat': 'in_playlist',  # Баланс між швидкістю та метаданими
             'force_generic_extractor': False,
             'ignoreerrors': True,
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            logger.info(f"SoundCloud: парсинг плейліста {playlist_url}")
             info = ydl.extract_info(playlist_url, download=False)
             
             if not info:
@@ -256,26 +257,59 @@ async def get_soundcloud_playlist_tracks(playlist_url: str) -> list:
                     'artist': info.get('uploader', 'Unknown Artist'),
                     'url': info.get('webpage_url', playlist_url)
                 }]
+                logger.info(f"SoundCloud: це окремий трек, не плейліст")
                 return tracks
             
             if not entries:
                 logger.error(f"SoundCloud: no entries found. Info keys: {info.keys()}")
+                logger.error(f"SoundCloud: info type: {info.get('_type')}, url: {info.get('url')}")
                 return []
             
             tracks = []
-            for entry in entries:
-                if entry:
-                    track_name = entry.get('title', 'Unknown Track')
-                    artist = entry.get('uploader', entry.get('artist', 'Unknown Artist'))
-                    url = entry.get('webpage_url', entry.get('url', ''))
+            for idx, entry in enumerate(entries):
+                if not entry:
+                    continue
                     
-                    tracks.append({
-                        'name': track_name,
-                        'artist': artist,
-                        'url': url
-                    })
+                # Логуємо перший трек для дебагу
+                if idx == 0:
+                    logger.info(f"SoundCloud entry sample (all keys): {list(entry.keys())}")
+                    logger.info(f"SoundCloud entry sample (values): {entry}")
+                
+                # Спочатку пробуємо взяти з метаданих
+                track_name = entry.get('title') or entry.get('track')
+                artist = entry.get('uploader') or entry.get('artist') or entry.get('creator') or entry.get('album_artist') or entry.get('channel')
+                
+                # Якщо немає - парсимо з URL
+                track_url = entry.get('url', '')
+                if not track_name and track_url:
+                    try:
+                        # https://soundcloud.com/artist/track-name
+                        parts = track_url.rstrip('/').split('/')
+                        if len(parts) >= 2:
+                            url_track_name = parts[-1]
+                            # Якщо назва треку - це просто ID (тільки цифри), не використовуємо
+                            if not url_track_name.isdigit():
+                                track_name = url_track_name.replace('-', ' ').title()
+                            if not artist:
+                                artist = parts[-2].replace('-', ' ').title()
+                    except Exception as e:
+                        logger.warning(f"Не вдалося парсити URL {track_url}: {e}")
+                
+                # Фінальні значення за замовчуванням
+                if not track_name:
+                    track_name = 'Unknown Track'
+                if not artist:
+                    artist = 'Unknown Artist'
+                
+                logger.debug(f"SoundCloud parsed: {artist} - {track_name}")
+                
+                tracks.append({
+                    'name': track_name,
+                    'artist': artist,
+                    'url': track_url
+                })
             
-            logger.info(f"SoundCloud: parsed {len(tracks)} tracks")
+            logger.info(f"SoundCloud: успішно парсано {len(tracks)} треків")
             return tracks
             
     except Exception as e:
@@ -949,8 +983,23 @@ async def callback_clear_all_saved(callback: CallbackQuery):
     
     await callback.answer(f"✅ Видалено {total} елементів!", show_alert=True)
     
-    # Повертаємось до меню очищення
-    await callback_clear_menu(callback)
+    # Оновлюємо меню (не викликаємо callback_clear_menu, бо повідомлення вже правильне)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🗑 Очистити треки", callback_data="clear_saved_tracks")],
+        [InlineKeyboardButton(text="🗑 Очистити все збережене", callback_data="clear_all_saved")],
+        [InlineKeyboardButton(text="🔄 Скинути налаштування", callback_data="reset_settings")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="profile")]
+    ])
+    
+    try:
+        await callback.message.edit_text(
+            "🗑️ <b>Очищення даних</b>\n\n"
+            "Вибери що хочеш видалити:",
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboard
+        )
+    except Exception:
+        pass  # Ігноруємо помилку "message is not modified"
 
 
 @dp.callback_query(F.data == "reset_settings")
@@ -1685,22 +1734,34 @@ async def process_import_youtube(message: Message, state: FSMContext):
         # Додаємо треки до обраного
         user_id = message.from_user.id
         imported_count = 0
+        skipped_count = 0
         
         for track in tracks:
-            track_data = {
-                'name': track['name'],
-                'artist': track['artist'],
-                'url': track['url']
-            }
-            if add_to_favorites(user_id, 'track', track_data):
-                imported_count += 1
+            # Шукаємо трек на Spotify
+            search_query = f"{track['artist']} {track['name']}"
+            spotify_track = spotify.search_track(search_query)
+            
+            if spotify_track:
+                track_data = {
+                    'name': spotify_track['name'],
+                    'artist': spotify_track['artists'],
+                    'url': spotify_track.get('spotify_url', '')
+                }
+                if add_to_favorites(user_id, 'track', track_data):
+                    imported_count += 1
+            else:
+                skipped_count += 1
+                logger.warning(f"Не знайдено на Spotify: {search_query}")
         
-        await message.answer(
-            f"✅ <b>Імпорт завершено!</b>\n\n"
-            f"� Додано треків: <b>{imported_count}</b> з {len(tracks)}\n"
-            f"💾 Переглянути: Моя музика → 💾 Збережена музика → 🎵 Треки",
-            parse_mode=ParseMode.HTML
-        )
+        result_text = f"✅ <b>Імпорт завершено!</b>\n\n"
+        result_text += f"📥 Додано треків: <b>{imported_count}</b> з {len(tracks)}\n"
+        
+        if skipped_count > 0:
+            result_text += f"⚠️ Пропущено (не знайдено на Spotify): <b>{skipped_count}</b>\n"
+        
+        result_text += f"💾 Переглянути: Моя музика → 💾 Збережена музика → 🎵 Треки"
+        
+        await message.answer(result_text, parse_mode=ParseMode.HTML)
         
     except Exception as e:
         logger.error(f"Помилка при імпорті з YouTube Music: {e}")
@@ -1729,28 +1790,58 @@ async def process_import_soundcloud(message: Message, state: FSMContext):
             await state.clear()
             return
         
+        logger.info(f"SoundCloud import: parsing {len(tracks)} tracks from playlist")
+        
         # Додаємо треки до обраного
         user_id = message.from_user.id
         imported_count = 0
+        skipped_count = 0
         
-        for track in tracks:
-            track_data = {
-                'name': track['name'],
-                'artist': track['artist'],
-                'url': track['url']
-            }
-            if add_to_favorites(user_id, 'track', track_data):
-                imported_count += 1
+        for idx, track in enumerate(tracks):
+            # Шукаємо трек на Spotify
+            search_query = f"{track['artist']} {track['name']}"
+            
+            # Пропускаємо якщо назва треку - це тільки цифри (ID з SoundCloud) або Unknown Track
+            if track['name'].replace(' ', '').isdigit() or track['name'] == 'Unknown Track':
+                skipped_count += 1
+                logger.warning(f"Пропущено трек з невідомою назвою: {track['name']}")
+                continue
+            
+            logger.info(f"SoundCloud import [{idx+1}/{len(tracks)}]: searching '{search_query}' on Spotify")
+            
+            spotify_track = spotify.search_track(search_query)
+            
+            if spotify_track:
+                track_data = {
+                    'name': spotify_track['name'],
+                    'artist': spotify_track['artists'],
+                    'url': spotify_track.get('spotify_url', '')
+                }
+                logger.info(f"Found on Spotify: {spotify_track['artists']} - {spotify_track['name']}")
+                
+                if add_to_favorites(user_id, 'track', track_data):
+                    imported_count += 1
+                    logger.info(f"Added to favorites, total: {imported_count}")
+                else:
+                    logger.warning(f"Not added (duplicate): {spotify_track['name']}")
+            else:
+                skipped_count += 1
+                logger.warning(f"Не знайдено на Spotify: {search_query}")
         
-        await message.answer(
-            f"✅ <b>Імпорт завершено!</b>\n\n"
-            f"� Додано треків: <b>{imported_count}</b> з {len(tracks)}\n"
-            f"💾 Переглянути: Моя музика → 💾 Збережена музика → 🎵 Треки",
-            parse_mode=ParseMode.HTML
-        )
+        result_text = f"✅ <b>Імпорт завершено!</b>\n\n"
+        result_text += f"📥 Додано треків: <b>{imported_count}</b> з {len(tracks)}\n"
+        
+        if skipped_count > 0:
+            result_text += f"⚠️ Пропущено (не знайдено на Spotify): <b>{skipped_count}</b>\n"
+        
+        result_text += f"💾 Переглянути: Моя музика → 💾 Збережена музика → 🎵 Треки"
+        
+        await message.answer(result_text, parse_mode=ParseMode.HTML)
         
     except Exception as e:
         logger.error(f"Помилка при імпорті з SoundCloud: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         await message.answer("❌ Виникла помилка при імпорті.")
     finally:
         await state.clear()
