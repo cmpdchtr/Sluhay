@@ -1068,7 +1068,11 @@ async def callback_favorites(callback: CallbackQuery):
 async def callback_favorites_category(callback: CallbackQuery):
     """Показати категорію збережених"""
     user_id = callback.from_user.id
-    category = callback.data.split("_")[1]  # tracks, albums, playlists
+    
+    # Парсимо callback data
+    parts = callback.data.split("_")
+    category = parts[1]  # tracks, albums, playlists
+    page = int(parts[2]) if len(parts) > 2 else 0
     
     if category == "tracks":
         items = get_favorites(user_id, 'track')
@@ -1096,11 +1100,18 @@ async def callback_favorites_category(callback: CallbackQuery):
         await callback.answer()
         return
     
+    # Пагінація
+    items_per_page = 10
+    total_pages = (len(items) + items_per_page - 1) // items_per_page
+    start_idx = page * items_per_page
+    end_idx = min(start_idx + items_per_page, len(items))
+    page_items = items[start_idx:end_idx]
+    
     # Формуємо список
     text = f"{title}\n\n"
     keyboard_buttons = []
     
-    for idx, item in enumerate(items[:10], 1):  # Показуємо перші 10
+    for idx, item in enumerate(page_items, start_idx + 1):
         if category == "tracks":
             name = f"{item['artist']} - {item['name']}"
         elif category == "albums":
@@ -1112,16 +1123,31 @@ async def callback_favorites_category(callback: CallbackQuery):
         keyboard_buttons.append([
             InlineKeyboardButton(
                 text=f"{idx}. {name[:25]}...",
-                callback_data=f"load_fav_{category[:-1]}_{idx-1}"
+                callback_data=f"load_fav_{category[:-1]}_{start_idx + idx - start_idx - 1}_{page}"
             ),
             InlineKeyboardButton(
                 text="❌",
-                callback_data=f"del_fav_{category[:-1]}_{idx-1}"
+                callback_data=f"del_fav_{category[:-1]}_{start_idx + idx - start_idx - 1}_{page}"
             )
         ])
     
-    if len(items) > 10:
-        text += f"\n📊 Показано 10 з {len(items)}"
+    # Кнопки пагінації
+    if total_pages > 1:
+        text += f"\n� Сторінка {page + 1} з {total_pages}"
+        pagination_buttons = []
+        
+        if page > 0:
+            pagination_buttons.append(
+                InlineKeyboardButton(text="◀️ Назад", callback_data=f"fav_{category}_{page - 1}")
+            )
+        
+        if page < total_pages - 1:
+            pagination_buttons.append(
+                InlineKeyboardButton(text="Вперед ▶️", callback_data=f"fav_{category}_{page + 1}")
+            )
+        
+        if pagination_buttons:
+            keyboard_buttons.append(pagination_buttons)
     
     keyboard_buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="favorites")])
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
@@ -1140,6 +1166,7 @@ async def callback_load_favorite(callback: CallbackQuery, state: FSMContext):
     parts = callback.data.split("_")
     item_type = parts[2]  # track, album, playlist
     item_index = int(parts[3])
+    page = int(parts[4]) if len(parts) > 4 else 0
     
     user_id = callback.from_user.id
     items = get_favorites(user_id, item_type)
@@ -1181,6 +1208,7 @@ async def callback_delete_favorite(callback: CallbackQuery):
     parts = callback.data.split("_")
     item_type = parts[2]  # track, album, playlist
     item_index = int(parts[3])
+    page = int(parts[4]) if len(parts) > 4 else 0
     
     user_id = callback.from_user.id
     items = get_favorites(user_id, item_type)
@@ -1197,9 +1225,24 @@ async def callback_delete_favorite(callback: CallbackQuery):
     
     await callback.answer("🗑 Видалено зі збережених!", show_alert=True)
     
-    # Оновлюємо список
+    # Оновлюємо список на тій же сторінці
     category = f"{item_type}s"
-    await callback_favorites_category(callback)
+    
+    # Створюємо новий callback з правильною сторінкою
+    new_callback_data = f"fav_{category}_{page}"
+    
+    # Створюємо новий CallbackQuery об'єкт з оновленими даними
+    class FakeCallback:
+        def __init__(self, original_callback, new_data):
+            self.from_user = original_callback.from_user
+            self.message = original_callback.message
+            self.data = new_data
+            
+        async def answer(self, *args, **kwargs):
+            pass
+    
+    fake_callback = FakeCallback(callback, new_callback_data)
+    await callback_favorites_category(fake_callback)
 
 
 # Обробник кнопки "Скасувати"
